@@ -130,6 +130,9 @@ textarea:focus { border-color: var(--ocean); box-shadow: 0 0 0 4px rgba(0, 105, 
 .auto-pick-copy > span { color: #65758e; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .auto-pick-arrow { margin-left: auto; color: var(--ocean); font-weight: 800; }
 
+.selected-council-heading { margin: 1px 1px 6px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.selected-council-heading strong { color: #344967; font-size: 9px; letter-spacing: .04em; text-transform: uppercase; }
+.selected-council-heading span { color: #8795a8; font-size: 8px; }
 .selected-council { margin-bottom: 11px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .selected-council > span { min-width: 0; padding: 8px 9px; border: 1px solid #d8e4f5; border-radius: 10px; color: #244365; background: #f5f9ff; font-size: 9px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .selected-council small { display: block; margin-bottom: 3px; color: #7c8da5; font-size: 7px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }

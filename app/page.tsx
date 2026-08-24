@@ -106,6 +106,7 @@ export default function Home() {
   const [directorySource, setDirectorySource] = useState<ModelDirectory["source"]>("fixture");
   const [directoryNotice, setDirectoryNotice] = useState<string | null>(null);
   const resultsRef = useRef<HTMLElement>(null);
+  const modelBrowserRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -156,12 +157,22 @@ export default function Home() {
   );
   const visibleModels = useMemo(() => {
     const normalizedQuery = modelQuery.trim().toLowerCase();
-    return models.filter((model) => {
-      const provider = model.provider.split(" · ")[0];
-      return (providerFilter === "All providers" || provider === providerFilter)
-        && (!normalizedQuery || `${model.name} ${model.id} ${model.provider} ${model.strength}`.toLowerCase().includes(normalizedQuery));
-    });
-  }, [modelQuery, models, providerFilter]);
+    const selectedOrder = new Map(selectedIds.map((modelId, index) => [modelId, index]));
+    return models
+      .filter((model) => {
+        const provider = model.provider.split(" · ")[0];
+        return (providerFilter === "All providers" || provider === providerFilter)
+          && (!normalizedQuery || `${model.name} ${model.id} ${model.provider} ${model.strength}`.toLowerCase().includes(normalizedQuery));
+      })
+      .sort((first, second) => {
+        const firstIndex = selectedOrder.get(first.id);
+        const secondIndex = selectedOrder.get(second.id);
+        if (firstIndex !== undefined && secondIndex !== undefined) return firstIndex - secondIndex;
+        if (firstIndex !== undefined) return -1;
+        if (secondIndex !== undefined) return 1;
+        return 0;
+      });
+  }, [modelQuery, models, providerFilter, selectedIds]);
 
   function updatePrompt(nextPrompt: string) {
     setPrompt(nextPrompt);
@@ -204,12 +215,17 @@ export default function Home() {
       }
 
       setSelectedIds(validIds);
+      setModelQuery("");
+      setProviderFilter("All providers");
       setAutoPick({ status: "success", data: recommendation });
       setHasRun(false);
       setResults({});
       setSynthesis({ status: "idle" });
       setPreferred(null);
       setRunMode(null);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => modelBrowserRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
+      });
     } catch (error) {
       setAutoPick({
         status: "error",
@@ -349,6 +365,17 @@ export default function Home() {
             <span className="selection-count">{selectedIds.length} / 3 selected</span>
           </div>
 
+          <div className="selected-council-heading">
+            <strong>Selected now</strong>
+            <span>These models stay pinned at the top of the catalog</span>
+          </div>
+          <div className="selected-council" aria-label="Selected council" aria-live="polite">
+            {selectedIds.map((modelId, index) => {
+              const model = getModel(modelId, models);
+              return model ? <span key={modelId}><small>Seat {index + 1}</small>{model.name}</span> : null;
+            })}
+          </div>
+
           <button
             className="auto-pick-button"
             type="button"
@@ -362,13 +389,6 @@ export default function Home() {
             </span>
             <span className="auto-pick-arrow" aria-hidden="true">{autoPick.status === "loading" ? "•••" : "→"}</span>
           </button>
-
-          <div className="selected-council" aria-label="Selected council">
-            {selectedIds.map((modelId, index) => {
-              const model = getModel(modelId, models);
-              return model ? <span key={modelId}><small>Seat {index + 1}</small>{model.name}</span> : null;
-            })}
-          </div>
 
           <div className="model-browser-tools">
             <label>
@@ -393,7 +413,7 @@ export default function Home() {
             <span>{directorySource === "digitalocean" ? "Live catalog" : directorySource === "fixture" ? "Demo catalog" : "Fallback catalog"}</span>
           </div>
 
-          <div className="model-grid model-browser-grid">
+          <div className="model-grid model-browser-grid" ref={modelBrowserRef}>
             {visibleModels.map((model) => {
               const selected = selectedIds.includes(model.id);
               const selectionBlocked = !selected && selectedIds.length >= 3;
