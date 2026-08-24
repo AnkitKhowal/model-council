@@ -1,0 +1,445 @@
+"use client";
+
+import { useMemo, useRef, useState } from "react";
+import { DEFAULT_MODEL_IDS, MODEL_CATALOG, PRICING_AS_OF, getModel } from "../lib/models";
+import type { ApiError, ModelResult, RunMode, Synthesis } from "../lib/types";
+
+const examples = [
+  {
+    label: "Architecture",
+    prompt: "Design a rate-limiting strategy for a multi-tenant SaaS API. Explain the algorithm, storage choice, failure behavior, and scaling tradeoffs.",
+  },
+  {
+    label: "Explain simply",
+    prompt: "Explain vector databases to a product manager in plain English. Include when a team should and should not use one.",
+  },
+];
+
+type ResultState =
+  | { status: "loading" }
+  | { status: "success"; data: ModelResult }
+  | { status: "error"; error: string };
+
+type SynthesisState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; data: Synthesis }
+  | { status: "error"; error: string };
+
+function formatLatency(milliseconds: number) {
+  return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(1)} sec`;
+}
+
+function formatCost(cost: number) {
+  if (cost < 0.00001) return "<$0.00001";
+  if (cost < 0.001) return `$${cost.toFixed(5)}`;
+  return `$${cost.toFixed(3)}`;
+}
+
+function getErrorMessage(payload: unknown, fallback: string) {
+  const error = payload as ApiError;
+  return typeof error?.error === "string" ? error.error : fallback;
+}
+
+function ResponseText({ text }: { text: string }) {
+  return (
+    <div className="response-copy">
+      {text.split("\n").filter((line) => line.trim()).map((line, index) => {
+        const trimmed = line.trim();
+        const isList = /^(?:\d+\.|•|-)/.test(trimmed);
+        return <p className={isList ? "response-list-item" : undefined} key={`${trimmed}-${index}`}>{trimmed}</p>;
+      })}
+    </div>
+  );
+}
+
+function SourcePills({ sources, onSource }: { sources: string[]; onSource: (source: string) => void }) {
+  return (
+    <span className="source-pills" aria-label="Source models">
+      {sources.map((source) => {
+        const model = getModel(source);
+        return (
+          <button type="button" key={source} onClick={() => onSource(source)} title={`View ${model?.name ?? source} response`}>
+            {model?.shortName ?? source}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+
+export default function Home() {
+  const [prompt, setPrompt] = useState(examples[0].prompt);
+  const [selectedIds, setSelectedIds] = useState<string[]>(DEFAULT_MODEL_IDS);
+  const [results, setResults] = useState<Record<string, ResultState>>({});
+  const [synthesis, setSynthesis] = useState<SynthesisState>({ status: "idle" });
+  const [preferred, setPreferred] = useState<string | null>(null);
+  const [runPrompt, setRunPrompt] = useState("");
+  const [runMode, setRunMode] = useState<RunMode | null>(null);
+  const [hasRun, setHasRun] = useState(false);
+  const resultsRef = useRef<HTMLElement>(null);
+
+  const successfulResults = useMemo(
+    () => selectedIds.map((id) => results[id]).filter((state): state is { status: "success"; data: ModelResult } => state?.status === "success").map((state) => state.data),
+    [results, selectedIds],
+  );
+  const fastestId = successfulResults.length
+    ? [...successfulResults].sort((a, b) => a.latencyMs - b.latencyMs)[0].modelId
+    : null;
+  const cheapestId = successfulResults.length
+    ? [...successfulResults].sort((a, b) => a.estimatedCost - b.estimatedCost)[0].modelId
+    : null;
+  const comparisonRunning = selectedIds.some((id) => results[id]?.status === "loading");
+
+  function toggleModel(modelId: string) {
+    if (comparisonRunning || synthesis.status === "loading") return;
+    setSelectedIds((current) => {
+      if (current.includes(modelId)) return current.length <= 2 ? current : current.filter((id) => id !== modelId);
+      if (current.length >= 3) return current;
+      return [...current, modelId];
+    });
+  }
+
+  function scrollToSource(modelId: string) {
+    document.getElementById(`result-${modelId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  async function invokeModel(modelId: string, currentPrompt: string) {
+    try {
+      const response = await fetch("/api/invoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: currentPrompt, modelId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(getErrorMessage(payload, "This model could not complete the request."));
+
+      const data = payload as ModelResult;
+      setRunMode(data.mode);
+      setResults((current) => ({ ...current, [modelId]: { status: "success", data } }));
+      return data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "This model could not complete the request.";
+      setResults((current) => ({ ...current, [modelId]: { status: "error", error: message } }));
+      return null;
+    }
+  }
+
+  async function synthesize(currentPrompt: string, completed: ModelResult[]) {
+    setSynthesis({ status: "loading" });
+    try {
+      const response = await fetch("/api/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: currentPrompt, results: completed }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(getErrorMessage(payload, "The comparison could not be synthesized."));
+
+      const data = payload as Synthesis;
+      setRunMode(data.mode);
+      setSynthesis({ status: "success", data });
+    } catch (error) {
+      setSynthesis({
+        status: "error",
+        error: error instanceof Error ? error.message : "The original responses are still available below.",
+      });
+    }
+  }
+
+  async function runComparison() {
+    const currentPrompt = prompt.trim();
+    if (!currentPrompt || selectedIds.length < 2 || comparisonRunning || synthesis.status === "loading") return;
+
+    const pending = Object.fromEntries(selectedIds.map((id) => [id, { status: "loading" } satisfies ResultState]));
+    setRunPrompt(currentPrompt);
+    setHasRun(true);
+    setPreferred(null);
+    setRunMode(null);
+    setResults(pending);
+    setSynthesis({ status: "idle" });
+
+    window.setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    const completed = (await Promise.all(selectedIds.map((id) => invokeModel(id, currentPrompt))))
+      .filter((result): result is ModelResult => Boolean(result));
+
+    if (completed.length >= 2) await synthesize(currentPrompt, completed);
+    else if (completed.length === 1) {
+      setSynthesis({ status: "error", error: "At least two successful responses are needed for a combined view." });
+    }
+  }
+
+  return (
+    <main className="app-shell">
+      <header className="topbar">
+        <a className="brand" href="#top" aria-label="Model Council home">
+          <span className="brand-mark">MC</span>
+          <span>Model Council</span>
+        </a>
+        <div className="header-meta">
+          {runMode && <span className={`mode-pill ${runMode}`}>{runMode === "live" ? "Live inference" : "Demo data"}</span>}
+          <div className="powered-by">
+            <span className="status-dot" />
+            Powered by DigitalOcean Gradient™ AI
+          </div>
+        </div>
+      </header>
+
+      <section className="hero" id="top">
+        <div className="eyebrow">ONE PROMPT · MULTIPLE PERSPECTIVES</div>
+        <h1>Ask once. Decide <span>with confidence.</span></h1>
+        <p>
+          Compare leading AI models side by side, understand where they agree,
+          and get one transparent answer without losing the evidence.
+        </p>
+      </section>
+
+      <section className="workspace" aria-label="Model comparison workspace">
+        <div className="composer-card">
+          <div className="section-heading">
+            <div>
+              <span className="step-number">01</span>
+              <h2>What do you want to ask?</h2>
+            </div>
+            <span className="character-count">{prompt.length.toLocaleString()} / 4,000</span>
+          </div>
+
+          <textarea
+            aria-label="Prompt"
+            maxLength={4000}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder="Enter a prompt to compare across models…"
+          />
+
+          <div className="example-row">
+            <span>Try an example</span>
+            {examples.map((example) => (
+              <button key={example.label} type="button" onClick={() => setPrompt(example.prompt)}>
+                {example.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="models-card">
+          <div className="section-heading">
+            <div>
+              <span className="step-number">02</span>
+              <h2>Your model council</h2>
+            </div>
+            <span className="selection-count">{selectedIds.length} selected</span>
+          </div>
+
+          <div className="model-grid">
+            {MODEL_CATALOG.map((model, index) => {
+              const selected = selectedIds.includes(model.id);
+              const selectionBlocked = !selected && selectedIds.length >= 3;
+              return (
+                <button
+                  className={`model-option ${model.accent} ${selected ? "selected" : ""}`}
+                  key={model.id}
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={`${selected ? "Remove" : "Add"} ${model.name}`}
+                  disabled={selectionBlocked || comparisonRunning || synthesis.status === "loading"}
+                  onClick={() => toggleModel(model.id)}
+                >
+                  <span className="checkmark">{selected ? "✓" : "+"}</span>
+                  <span className="model-index">0{index + 1}</span>
+                  <strong>{model.name}</strong>
+                  <small>{model.strength}</small>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            className="compare-button"
+            type="button"
+            onClick={runComparison}
+            disabled={!prompt.trim() || selectedIds.length < 2 || comparisonRunning || synthesis.status === "loading"}
+          >
+            <span>{comparisonRunning ? "Council is thinking…" : `Compare ${selectedIds.length} models`}</span>
+            <span aria-hidden="true">{comparisonRunning ? "•••" : "→"}</span>
+          </button>
+          <p className="privacy-note">Your API key stays on the server. Prompts are not stored.</p>
+        </div>
+      </section>
+
+      {!hasRun ? (
+        <section className="results-preview" aria-label="Comparison results preview">
+          <div className="results-icon" aria-hidden="true">03</div>
+          <div>
+            <h2>Your council is ready</h2>
+            <p>Run the prompt to see independent answers and a traceable synthesis.</p>
+          </div>
+          <div className="result-lines" aria-hidden="true"><span /><span /><span /></div>
+        </section>
+      ) : (
+        <section className="results-section" ref={resultsRef} aria-live="polite">
+          <div className="results-header">
+            <div>
+              <span className="step-number">03 · INDEPENDENT RESPONSES</span>
+              <h2>Compare the evidence</h2>
+              <p className="run-prompt">“{runPrompt}”</p>
+            </div>
+            <button type="button" className="edit-prompt" onClick={() => document.getElementById("top")?.scrollIntoView({ behavior: "smooth" })}>Edit prompt ↑</button>
+          </div>
+
+          <div className="results-grid">
+            {selectedIds.map((modelId) => {
+              const model = getModel(modelId)!;
+              const state = results[modelId];
+              const isPreferred = preferred === modelId;
+              return (
+                <article className={`result-card ${model.accent} ${isPreferred ? "preferred" : ""}`} id={`result-${modelId}`} key={modelId}>
+                  <div className="result-card-header">
+                    <div className="model-avatar">{model.shortName.slice(0, 2).toUpperCase()}</div>
+                    <div>
+                      <h3>{model.name}</h3>
+                      <p>{model.provider}</p>
+                    </div>
+                    <span className={`result-status ${state?.status ?? "loading"}`}>
+                      {state?.status === "success" ? "Complete" : state?.status === "error" ? "Unavailable" : "Thinking"}
+                    </span>
+                  </div>
+
+                  {(!state || state.status === "loading") && (
+                    <div className="response-skeleton" aria-label={`${model.name} is generating a response`}>
+                      <span /><span /><span /><span />
+                    </div>
+                  )}
+
+                  {state?.status === "error" && (
+                    <div className="model-error">
+                      <strong>This seat could not respond</strong>
+                      <p>{state.error}</p>
+                    </div>
+                  )}
+
+                  {state?.status === "success" && (
+                    <>
+                      <ResponseText text={state.data.output} />
+                      <div className="objective-metrics">
+                        <div><span>Latency</span><strong>{formatLatency(state.data.latencyMs)}</strong></div>
+                        <div><span>Tokens</span><strong>{state.data.usage.totalTokens.toLocaleString()}</strong></div>
+                        <div><span>Est. cost</span><strong>{formatCost(state.data.estimatedCost)}</strong></div>
+                      </div>
+                      <div className="result-footer">
+                        <div className="fact-badges">
+                          {fastestId === modelId && <span>Fastest</span>}
+                          {cheapestId === modelId && <span>Lowest cost</span>}
+                        </div>
+                        <button className="choose-button" type="button" aria-pressed={isPreferred} onClick={() => setPreferred(isPreferred ? null : modelId)}>
+                          {isPreferred ? "Selected ✓" : "Choose answer"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          <p className="pricing-caption">Costs are estimates using published token rates as of {PRICING_AS_OF}. Actual billing may vary.</p>
+
+          {(synthesis.status === "loading" || synthesis.status === "success" || synthesis.status === "error") && (
+            <div className="synthesis-wrap">
+              <div className="synthesis-heading">
+                <div>
+                  <span className="step-number">04 · COMBINED VIEW</span>
+                  <h2>One answer, with receipts</h2>
+                </div>
+                <span className="transparency-pill">
+                  {synthesis.status === "success" && synthesis.data.engine === "digitalocean-model-synthesis"
+                    ? "DigitalOcean Model Synthesis"
+                    : "Transparent synthesis"}
+                </span>
+              </div>
+
+              {synthesis.status === "loading" && (
+                <div className="synthesis-loading">
+                  <div className="synthesis-orbit"><span /><span /><span /></div>
+                  <div><strong>Finding the common ground</strong><p>Comparing claims, tradeoffs, and meaningful disagreement…</p></div>
+                </div>
+              )}
+
+              {synthesis.status === "error" && (
+                <div className="synthesis-error">
+                  <div className="warning-mark">!</div>
+                  <div><strong>Combined view unavailable</strong><p>{synthesis.error}</p><small>Your original model responses remain intact above.</small></div>
+                </div>
+              )}
+
+              {synthesis.status === "success" && (
+                <div className="synthesis-card">
+                  <div className="recommendation-banner">
+                    <span>RECOMMENDATION</span>
+                    <strong>{synthesis.data.recommendation.label}</strong>
+                    <p>{synthesis.data.recommendation.rationale}</p>
+                  </div>
+
+                  <div className="combined-answer">
+                    <h3>Combined answer</h3>
+                    {synthesis.data.answer.map((section, index) => (
+                      <div className="provenance-section" key={`${section.text}-${index}`}>
+                        <p>{section.text}</p>
+                        <SourcePills sources={section.sources} onSource={scrollToSource} />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="analysis-grid">
+                    <div className="analysis-panel agreement-panel">
+                      <div className="analysis-title"><span>✓</span><h3>Where they agree</h3></div>
+                      {synthesis.data.agreements.map((agreement, index) => (
+                        <div className="analysis-item" key={`${agreement.text}-${index}`}>
+                          <p>{agreement.text}</p>
+                          <SourcePills sources={agreement.sources} onSource={scrollToSource} />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="analysis-panel disagreement-panel">
+                      <div className="analysis-title"><span>≠</span><h3>Where they differ</h3></div>
+                      {synthesis.data.disagreements.length ? synthesis.data.disagreements.map((disagreement, index) => (
+                        <div className="disagreement-item" key={`${disagreement.topic}-${index}`}>
+                          <strong>{disagreement.topic}</strong>
+                          {disagreement.positions.map((position) => (
+                            <p key={`${position.modelId}-${position.text}`}>
+                              <button type="button" onClick={() => scrollToSource(position.modelId)}>{getModel(position.modelId)?.shortName ?? position.modelId}</button>
+                              {position.text}
+                            </p>
+                          ))}
+                        </div>
+                      )) : <p className="no-disagreement">No material disagreements were identified.</p>}
+                    </div>
+                  </div>
+
+                  <button className={`choose-combined ${preferred === "combined" ? "selected" : ""}`} type="button" onClick={() => setPreferred(preferred === "combined" ? null : "combined")}>
+                    <span>{preferred === "combined" ? "Combined answer selected" : "Choose combined answer"}</span>
+                    <span aria-hidden="true">{preferred === "combined" ? "✓" : "→"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {preferred && (
+            <div className="decision-toast" role="status">
+              <span className="decision-check">✓</span>
+              <div><strong>Decision captured</strong><p>You preferred {preferred === "combined" ? "the transparent combined answer" : getModel(preferred)?.name}.</p></div>
+              <button type="button" onClick={() => setPreferred(null)} aria-label="Clear selection">×</button>
+            </div>
+          )}
+        </section>
+      )}
+
+      <footer>
+        <span>Model Council</span>
+        <p>Built with DigitalOcean Serverless Inference · No prompts are persisted</p>
+      </footer>
+    </main>
+  );
+}
