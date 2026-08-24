@@ -26,6 +26,10 @@ services:
         value: https://inference.do-ai.run/v1
         scope: RUN_TIME
         type: GENERAL
+      - key: AUTO_PICK_MODEL_ID
+        value: openai-gpt-oss-20b
+        scope: RUN_TIME
+        type: GENERAL
       - key: SYNTHESIZER_MODEL_ID
         value: openai-gpt-oss-20b
         scope: RUN_TIME
