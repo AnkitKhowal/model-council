@@ -1,8 +1,8 @@
 import {
-  AUTO_PICK_ALLOWED_IDS,
   createRuleRecommendation,
   normalizeAiRecommendation,
 } from "../../../lib/auto-pick";
+import { getModelDirectory } from "../../../lib/model-directory";
 import { getModel } from "../../../lib/models";
 import type { ApiError } from "../../../lib/types";
 
@@ -25,8 +25,8 @@ function extractJsonObject(raw: string) {
   }
 }
 
-function fallback(prompt: string, notice: string) {
-  return Response.json(createRuleRecommendation(prompt, "live", notice));
+function fallback(prompt: string, models: Awaited<ReturnType<typeof getModelDirectory>>["models"], notice: string) {
+  return Response.json(createRuleRecommendation(prompt, "live", models, notice));
 }
 
 export async function POST(request: Request) {
@@ -46,31 +46,29 @@ export async function POST(request: Request) {
     return jsonError(`Prompts are limited to ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`, 400, "PROMPT_TOO_LONG");
   }
 
+  const directory = await getModelDirectory();
+  const allowedIds = new Set(directory.models.map((model) => model.id));
+
   if (process.env.DEMO_MODE !== "false") {
     await new Promise((resolve) => setTimeout(resolve, 420));
-    return Response.json(createRuleRecommendation(prompt, "demo"));
+    return Response.json(createRuleRecommendation(prompt, "demo", directory.models));
   }
 
   const apiKey = process.env.DIGITALOCEAN_INFERENCE_KEY;
   if (!apiKey) {
-    return fallback(prompt, "The AI selector is unavailable, so transparent routing rules were used.");
+    return fallback(prompt, directory.models, "The AI selector is unavailable, so transparent routing rules were used.");
   }
 
   const selectorId = process.env.AUTO_PICK_MODEL_ID ?? "openai-gpt-oss-20b";
-  const selector = getModel(selectorId);
-  if (!selector || !AUTO_PICK_ALLOWED_IDS.has(selector.id)) {
-    return fallback(prompt, "The configured selector is outside the model allowlist, so transparent routing rules were used.");
+  const selector = getModel(selectorId, directory.models);
+  if (!selector || !allowedIds.has(selector.id)) {
+    return fallback(prompt, directory.models, "The configured selector is outside the available model list, so transparent routing rules were used.");
   }
 
   const baseUrl = (process.env.DIGITALOCEAN_INFERENCE_BASE_URL ?? "https://inference.do-ai.run/v1").replace(/\/$/, "");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const modelGuide = [
-    "openai-gpt-oss-120b: strongest for multi-step reasoning and complex tradeoffs",
-    "llama-4-maverick: balanced generalist with clear communication",
-    "qwen3.5-397b-a17b: strongest for technical depth and implementation detail",
-    "openai-gpt-oss-20b: fastest and lowest-cost challenger",
-  ].join("; ");
+  const modelGuide = directory.models.map((model) => `${model.id}: ${model.provider}, ${model.strength}`).join("; ");
   const recommendationTool = {
     type: "function",
     function: {
@@ -92,7 +90,7 @@ export async function POST(request: Request) {
               type: "object",
               additionalProperties: false,
               properties: {
-                modelId: { type: "string", enum: Array.from(AUTO_PICK_ALLOWED_IDS) },
+                modelId: { type: "string", enum: Array.from(allowedIds) },
                 reason: { type: "string", description: "One concrete sentence tied to this prompt." },
               },
               required: ["modelId", "reason"],
@@ -132,7 +130,7 @@ export async function POST(request: Request) {
     });
 
     if (!upstream.ok) {
-      return fallback(prompt, "The AI selector did not respond, so transparent routing rules were used.");
+      return fallback(prompt, directory.models, "The AI selector did not respond, so transparent routing rules were used.");
     }
 
     const rawPayload = await upstream.text();
@@ -147,7 +145,7 @@ export async function POST(request: Request) {
     try {
       payload = JSON.parse(rawPayload) as typeof payload;
     } catch {
-      return fallback(prompt, "The AI selector returned an unreadable result, so transparent routing rules were used.");
+      return fallback(prompt, directory.models, "The AI selector returned an unreadable result, so transparent routing rules were used.");
     }
 
     const message = payload.choices?.[0]?.message;
@@ -163,15 +161,17 @@ export async function POST(request: Request) {
     const recommendation = normalizeAiRecommendation(
       extractJsonObject(typeof toolArguments === "string" ? toolArguments : rawContent),
       "live",
+      allowedIds,
     );
 
     if (!recommendation) {
-      return fallback(prompt, "The AI selector returned an invalid recommendation, so transparent routing rules were used.");
+      return fallback(prompt, directory.models, "The AI selector returned an invalid recommendation, so transparent routing rules were used.");
     }
     return Response.json(recommendation);
   } catch (error) {
     return fallback(
       prompt,
+      directory.models,
       error instanceof Error && error.name === "AbortError"
         ? "The AI selector timed out, so transparent routing rules were used."
         : "The AI selector could not be reached, so transparent routing rules were used.",
