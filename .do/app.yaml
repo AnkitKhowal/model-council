@@ -8,7 +8,7 @@ services:
   - name: web
     environment_slug: node-js
     github:
-      repo: YOUR_GITHUB_USER/model-council
+      repo: AnkitKhowal/model-council
       branch: main
       deploy_on_push: true
     source_dir: /
@@ -19,7 +19,7 @@ services:
     instance_size_slug: basic-xxs
     envs:
       - key: DEMO_MODE
-        value: "true"
+        value: "false"
         scope: RUN_TIME
         type: GENERAL
       - key: DIGITALOCEAN_INFERENCE_BASE_URL
