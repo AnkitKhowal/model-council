@@ -121,12 +121,13 @@ export async function POST(request: Request) {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model: synthesizerId,
       messages,
-      max_tokens: 1_200,
+      max_completion_tokens: 1_200,
       temperature: 0.15,
       ...(nativeTool ? {
         tools: [{
@@ -158,7 +159,13 @@ export async function POST(request: Request) {
     }
 
     if (!upstream.ok) return jsonError("The synthesis model is temporarily unavailable.", 502, `UPSTREAM_${upstream.status}`);
-    const payload = await upstream.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const rawPayload = await upstream.text();
+    let payload: { choices?: Array<{ message?: { content?: string } }> };
+    try {
+      payload = JSON.parse(rawPayload) as typeof payload;
+    } catch {
+      return jsonError("The synthesis model returned an invalid response. The original results are still available.", 502, "INVALID_UPSTREAM_RESPONSE");
+    }
     const content = payload.choices?.[0]?.message?.content;
     if (!content) return jsonError("The synthesis model returned an empty response.", 502, "EMPTY_SYNTHESIS");
 
