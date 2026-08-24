@@ -1,0 +1,36 @@
+name: model-council
+region: nyc
+features:
+  - buildpack-stack=ubuntu-22
+alerts:
+  - rule: DEPLOYMENT_FAILED
+services:
+  - name: web
+    environment_slug: node-js
+    github:
+      repo: YOUR_GITHUB_USER/model-council
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: npm run build
+    run_command: npm start
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: DEMO_MODE
+        value: "true"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: DIGITALOCEAN_INFERENCE_BASE_URL
+        value: https://inference.do-ai.run/v1
+        scope: RUN_TIME
+        type: GENERAL
+      - key: SYNTHESIZER_MODEL_ID
+        value: openai-gpt-oss-120b
+        scope: RUN_TIME
+        type: GENERAL
+      - key: USE_NATIVE_MODEL_SYNTHESIS
+        value: "true"
+        scope: RUN_TIME
+        type: GENERAL
