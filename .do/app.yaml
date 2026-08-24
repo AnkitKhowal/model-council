@@ -31,6 +31,6 @@ services:
         scope: RUN_TIME
         type: GENERAL
       - key: USE_NATIVE_MODEL_SYNTHESIS
-        value: "true"
+        value: "false"
         scope: RUN_TIME
         type: GENERAL
