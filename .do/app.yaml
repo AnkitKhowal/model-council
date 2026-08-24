@@ -27,7 +27,7 @@ services:
         scope: RUN_TIME
         type: GENERAL
       - key: SYNTHESIZER_MODEL_ID
-        value: openai-gpt-oss-120b
+        value: openai-gpt-oss-20b
         scope: RUN_TIME
         type: GENERAL
       - key: USE_NATIVE_MODEL_SYNTHESIS
