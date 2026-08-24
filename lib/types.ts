@@ -31,7 +31,7 @@ export type ModelResult = {
   output: string;
   latencyMs: number;
   usage: Usage;
-  estimatedCost: number;
+  estimatedCost: number | null;
   mode: RunMode;
 };
 
@@ -68,4 +68,10 @@ export type Synthesis = {
 export type ApiError = {
   error: string;
   code?: string;
+};
+
+export type ModelDirectory = {
+  models: import("./models").ModelConfig[];
+  source: "digitalocean" | "fixture" | "fallback";
+  notice?: string;
 };

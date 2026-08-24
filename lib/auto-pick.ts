@@ -1,4 +1,4 @@
-import { MODEL_CATALOG } from "./models";
+import { MODEL_CATALOG, type ModelConfig } from "./models";
 import type { AutoPickComplexity, AutoPickRecommendation, AutoPickRole, RunMode } from "./types";
 
 const MODEL_IDS = {
@@ -23,11 +23,10 @@ const WRITING_PATTERN = /\b(write|rewrite|edit|email|copy|headline|blog|story|to
 const SIMPLE_PATTERN = /\b(simple|simply|brief|briefly|concise|plain english|eli5|one sentence|short)\b/i;
 const HIGH_STAKES_PATTERN = /\b(legal|medical|financial|security|compliance|privacy|production|proof|formal verification)\b/i;
 
-export const AUTO_PICK_ALLOWED_IDS = new Set(MODEL_CATALOG.map((model) => model.id));
-
 export function createRuleRecommendation(
   prompt: string,
   mode: RunMode,
+  availableModels: ModelConfig[] = MODEL_CATALOG,
   notice?: string,
 ): AutoPickRecommendation {
   const isTechnical = TECHNICAL_PATTERN.test(prompt);
@@ -66,19 +65,34 @@ export function createRuleRecommendation(
     modelIds = [MODEL_IDS.generalist, MODEL_IDS.efficient, MODEL_IDS.deepReasoning];
   }
 
+  const availableIds = new Set(availableModels.map((model) => model.id));
   const uniqueAllowedIds = modelIds.filter(
-    (modelId, index) => AUTO_PICK_ALLOWED_IDS.has(modelId) && modelIds.indexOf(modelId) === index,
-  ).slice(0, 3);
+    (modelId, index) => availableIds.has(modelId) && modelIds.indexOf(modelId) === index,
+  );
+  const taskPatterns = isTechnical
+    ? [/codex|qwen|deepseek/i, /sol|opus|120b|reason|o3/i, /mini|nano|flash|luna|20b/i]
+    : isWriting
+      ? [/sonnet|llama|maverick|gpt-4o/i, /opus|sol|120b/i, /mini|nano|haiku|luna|20b/i]
+      : [/sol|opus|120b|reason|o3/i, /llama|sonnet|qwen|glm/i, /mini|nano|flash|luna|20b/i];
+  for (const pattern of taskPatterns) {
+    const match = availableModels.find((model) => pattern.test(model.id) && !uniqueAllowedIds.includes(model.id));
+    if (match) uniqueAllowedIds.push(match.id);
+  }
+  for (const model of availableModels) {
+    if (uniqueAllowedIds.length >= 3) break;
+    if (!uniqueAllowedIds.includes(model.id)) uniqueAllowedIds.push(model.id);
+  }
+  const selectedIds = uniqueAllowedIds.slice(0, 3);
 
   return {
     taskType,
     complexity,
     priority,
-    summary: `A ${complexity}-complexity ${taskType.toLowerCase()} prompt; this council balances ${priority.toLowerCase()} with an efficient challenger.`,
-    selections: uniqueAllowedIds.map((modelId, index) => ({
+    summary: `A ${complexity}-complexity ${taskType.toLowerCase()} prompt; this council balances ${priority.toLowerCase()} with a complementary challenger.`,
+    selections: selectedIds.map((modelId, index) => ({
       modelId,
       role: ROLES[index],
-      reason: MODEL_REASONS[modelId],
+      reason: MODEL_REASONS[modelId] ?? `${availableModels.find((model) => model.id === modelId)?.strength ?? "General-purpose capability"} adds a distinct perspective to this council.`,
     })),
     mode,
     method: "rules",
@@ -89,6 +103,7 @@ export function createRuleRecommendation(
 export function normalizeAiRecommendation(
   candidate: unknown,
   mode: RunMode,
+  allowedIds: Set<string>,
 ): AutoPickRecommendation | null {
   if (!candidate || typeof candidate !== "object") return null;
   const value = candidate as Record<string, unknown>;
@@ -101,7 +116,7 @@ export function normalizeAiRecommendation(
     const item = selection as Record<string, unknown>;
     const modelId = typeof item.modelId === "string" ? item.modelId : "";
     const reason = typeof item.reason === "string" ? item.reason.trim().slice(0, 220) : "";
-    if (!AUTO_PICK_ALLOWED_IDS.has(modelId) || !reason || index > 2) return null;
+    if (!allowedIds.has(modelId) || !reason || index > 2) return null;
     return { modelId, role: ROLES[index], reason };
   });
 

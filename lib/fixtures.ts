@@ -1,4 +1,4 @@
-import { getModel } from "./models";
+import { estimateCost, getModel } from "./models";
 import type { ModelResult, Synthesis } from "./types";
 
 const architectureResponses: Record<string, string> = {
@@ -81,12 +81,11 @@ export function createFixtureResult(prompt: string, modelId: string, latencyMs: 
   const model = getModel(modelId);
   if (!model) throw new Error("Unknown fixture model");
 
-  const output = fixtureSet(prompt)[modelId] ?? genericResponses[modelId];
+  const output = fixtureSet(prompt)[modelId] ?? genericResponses[modelId] ??
+    `${model.name} would begin by clarifying the desired outcome, constraints, and failure conditions. It would then compare a small set of viable approaches, make the important tradeoffs explicit, and recommend a reversible first step.\n\nFor this task, the response would prioritize ${model.strength.toLowerCase()} while identifying what should be measured before the design is expanded.`;
   const promptTokens = approximateTokens(prompt) + 24;
   const completionTokens = approximateTokens(output);
-  const estimatedCost =
-    (promptTokens / 1_000_000) * model.inputRatePerMillion +
-    (completionTokens / 1_000_000) * model.outputRatePerMillion;
+  const estimatedCost = estimateCost(modelId, promptTokens, completionTokens);
 
   return {
     modelId,
