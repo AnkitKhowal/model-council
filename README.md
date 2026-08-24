@@ -12,7 +12,7 @@ Customers do not need another generic benchmark telling them which model is univ
 
 Model Council therefore separates four jobs:
 
-1. **Route:** Recommend three complementary models using task type, complexity, cost, and latency—not complexity alone.
+1. **Route:** Consider every compatible model currently returned by DigitalOcean and recommend three complementary choices using task type, complexity, cost, and latency—not complexity alone.
 2. **Compare:** Show the original responses without hiding inconvenient differences.
 3. **Understand:** Display objective latency, token, and estimated-cost measurements.
 4. **Combine:** Synthesize useful common ground while linking every section back to the contributing models.
@@ -23,8 +23,8 @@ For live combined answers, the app prefers DigitalOcean's opt-in **Model Synthes
 
 ## Experience
 
-- Submit up to 4,000 characters and select two or three curated models.
-- Use **Auto-pick Beta** to preview three recommended models and a concrete reason for each selection, then edit the council before running it.
+- Submit up to 4,000 characters and search or filter the full compatible DigitalOcean model directory before selecting two or three models.
+- Use **Auto-pick Beta** to consider the same live directory, preview three recommended models and a concrete reason for each selection, then edit the council before running it.
 - Receive independent results progressively; one failure never removes successful responses.
 - Compare latency, token usage, and estimated cost using a versioned pricing table.
 - Review a combined answer with clickable source-model badges.
@@ -37,6 +37,8 @@ For live combined answers, the app prefers DigitalOcean's opt-in **Model Synthes
 ```mermaid
 flowchart LR
   U[Browser] --> W[Next.js application]
+  W --> M[GET /api/models]
+  M --> CATALOG[DigitalOcean /v1/models]
   W --> A[POST /api/recommend]
   A --> DO[DigitalOcean Serverless Inference]
   W --> I1[POST /api/invoke]
@@ -75,7 +77,7 @@ The default configuration uses realistic fixtures and does not make billable mod
 DEMO_MODE=true
 ```
 
-Fixture mode remains fully interactive and deliberately simulates different model latency, answers, token usage, partial results, and synthesis.
+Fixture mode remains fully interactive and includes a broad representative text-model catalog. It deliberately simulates different model latency, answers, token usage, partial results, and synthesis.
 
 ### Live DigitalOcean inference
 
@@ -92,20 +94,17 @@ USE_NATIVE_MODEL_SYNTHESIS=false
 
 Never prefix the inference key with `NEXT_PUBLIC_`, commit it, paste it into issue reports, or expose it in client-side code.
 
-The allowlist currently uses these active serverless model IDs:
-
-- `openai-gpt-oss-120b`
-- `llama-4-maverick`
-- `qwen3.5-397b-a17b`
-- `openai-gpt-oss-20b`
-
-Model availability and pricing change over time. Update `lib/models.ts` against the [DigitalOcean model catalog](https://docs.digitalocean.com/products/inference/details/models/) and [published pricing](https://docs.digitalocean.com/products/inference/details/pricing/) before a production launch.
+In live mode, the server loads currently available IDs from DigitalOcean's authenticated `/v1/models` endpoint, filters out image, audio, video, embedding, and reranking models, and exposes only safe display metadata to the browser. The built-in catalog provides a credential-free fallback. Model availability and pricing change over time; review the compatibility filter in `lib/models.ts` against the [DigitalOcean model catalog](https://docs.digitalocean.com/products/inference/details/models/).
 
 ## API contracts
 
+### `GET /api/models`
+
+Returns the complete compatible text-model directory for the current DigitalOcean access key, plus whether it came from live discovery, fixtures, or fallback configuration. The inference key never reaches the browser. Results are cached briefly to avoid adding a catalog lookup to every interaction.
+
 ### `POST /api/recommend`
 
-Accepts a prompt and returns exactly three allowlisted model IDs with roles, selection reasons, task type, complexity, and routing priority. In live mode, a lightweight DigitalOcean-hosted model performs the classification. Invalid output, timeouts, a missing key, or selector failure degrade to the same response contract using transparent local rules, so Auto-pick never blocks manual comparison.
+Accepts a prompt and returns exactly three model IDs from the currently discovered compatible directory, with roles, selection reasons, task type, complexity, and routing priority. In live mode, a lightweight DigitalOcean-hosted model considers the complete directory. Invalid output, timeouts, a missing key, or selector failure degrade to the same response contract using transparent local rules, so Auto-pick never blocks manual comparison.
 
 ### `POST /api/invoke`
 
@@ -116,7 +115,7 @@ Accepts a prompt and returns exactly three allowlisted model IDs with roles, sel
 }
 ```
 
-Returns the model output, measured latency, token usage, estimated cost, and `demo` or `live` mode. The route restricts model IDs, validates prompt length, applies a 30-second timeout, and redacts upstream details from user-facing errors.
+Returns the model output, measured latency, token usage, estimated cost when a configured rate is available, and `demo` or `live` mode. The route accepts only IDs in the server-discovered directory, supports both Chat Completions and Responses-only text models, validates prompt length, applies a 30-second timeout, and redacts upstream details from user-facing errors.
 
 ### `POST /api/synthesize`
 
@@ -130,7 +129,7 @@ npm run lint
 npm test
 ```
 
-The test suite verifies server rendering, input validation, allowlisted and explainable Auto-pick recommendations, the independent-result contract, objective metrics, and that synthesis provenance only references submitted responses.
+The test suite verifies server rendering, the broad compatible model directory, input validation, directory-constrained and explainable Auto-pick recommendations, the independent-result contract, objective metrics, and that synthesis provenance only references submitted responses.
 
 ## Deploy to DigitalOcean App Platform
 
@@ -147,7 +146,7 @@ App Platform sets `PORT`; the production server listens on that value automatica
 ## Important tradeoffs
 
 - **No persistence:** Keeps the assignment focused and prevents prompt retention. Saved comparisons belong in a later phase.
-- **Manual price configuration:** Makes estimates explainable, but requires regular catalog updates.
+- **Partial price configuration:** The discovery endpoint exposes IDs but not token prices. Known rates remain explainable estimates; other models show “Rate unavailable” instead of a fabricated value.
 - **Model-generated synthesis:** Useful but not ground truth. Originals and disagreements always remain visible.
 - **Explainable routing:** Auto-pick is a recommendation, not an invisible quality score. The user sees and can change every model before inference begins.
 - **No authentication or public rate limiting:** Appropriate for a controlled take-home demo, not an unrestricted production deployment.
