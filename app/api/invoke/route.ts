@@ -1,5 +1,6 @@
 import { createFixtureResult } from "../../../lib/fixtures";
-import { estimateCost, getModel } from "../../../lib/models";
+import { resolveAvailableModel } from "../../../lib/model-directory";
+import { estimateCost, usesResponsesApi } from "../../../lib/models";
 import type { ApiError, ModelResult } from "../../../lib/types";
 
 const MAX_PROMPT_LENGTH = 4_000;
@@ -27,13 +28,12 @@ export async function POST(request: Request) {
   const modelId = typeof (body as { modelId?: unknown })?.modelId === "string"
     ? (body as { modelId: string }).modelId
     : "";
-  const model = getModel(modelId);
-
   if (!prompt) return jsonError("Enter a prompt before comparing models.", 400, "EMPTY_PROMPT");
   if (prompt.length > MAX_PROMPT_LENGTH) {
     return jsonError(`Prompts are limited to ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`, 400, "PROMPT_TOO_LONG");
   }
-  if (!model) return jsonError("That model is not in the approved comparison list.", 400, "MODEL_NOT_ALLOWED");
+  const model = await resolveAvailableModel(modelId);
+  if (!model) return jsonError("That model is not in the compatible DigitalOcean model list.", 400, "MODEL_NOT_ALLOWED");
 
   if (isDemoMode()) {
     const delay = 650 + (modelId.length % 5) * 230;
@@ -57,22 +57,29 @@ export async function POST(request: Request) {
   const startedAt = Date.now();
 
   try {
-    const upstream = await fetch(`${baseUrl}/chat/completions`, {
+    const useResponsesApi = usesResponsesApi(model.id);
+    const messages = [
+      {
+        role: "system",
+        content: "Answer the user's request directly. Be specific, concise, and state important tradeoffs or uncertainty.",
+      },
+      { role: "user", content: prompt },
+    ];
+    const upstream = await fetch(`${baseUrl}/${useResponsesApi ? "responses" : "chat/completions"}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
+      body: JSON.stringify(useResponsesApi ? {
         model: model.id,
-        messages: [
-          {
-            role: "system",
-            content: "Answer the user's request directly. Be specific, concise, and state important tradeoffs or uncertainty.",
-          },
-          { role: "user", content: prompt },
-        ],
+        input: messages,
+        max_output_tokens: 900,
+        temperature: 0.35,
+      } : {
+        model: model.id,
+        messages,
         max_completion_tokens: 900,
         temperature: 0.35,
       }),
@@ -94,7 +101,14 @@ export async function POST(request: Request) {
     const rawPayload = await upstream.text();
     let payload: {
       choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+      };
     };
     try {
       payload = JSON.parse(rawPayload) as typeof payload;
@@ -102,16 +116,20 @@ export async function POST(request: Request) {
       return jsonError(`${model.name} returned an invalid response. Please try again.`, 502, "INVALID_UPSTREAM_RESPONSE");
     }
     const rawContent = payload.choices?.[0]?.message?.content;
-    const output = typeof rawContent === "string"
-      ? rawContent.trim()
-      : Array.isArray(rawContent)
-        ? rawContent.map((part) => part.text ?? "").join("\n").trim()
-        : "";
+    const output = useResponsesApi
+      ? (payload.output ?? []).flatMap((item) => item.content ?? [])
+          .filter((part) => part.type === "output_text" || typeof part.text === "string")
+          .map((part) => part.text ?? "").join("\n").trim()
+      : typeof rawContent === "string"
+        ? rawContent.trim()
+        : Array.isArray(rawContent)
+          ? rawContent.map((part) => part.text ?? "").join("\n").trim()
+          : "";
 
     if (!output) return jsonError(`${model.name} returned an empty response.`, 502, "EMPTY_MODEL_RESPONSE");
 
-    const promptTokens = payload.usage?.prompt_tokens ?? Math.ceil(prompt.length / 4);
-    const completionTokens = payload.usage?.completion_tokens ?? Math.ceil(output.length / 4);
+    const promptTokens = payload.usage?.prompt_tokens ?? payload.usage?.input_tokens ?? Math.ceil(prompt.length / 4);
+    const completionTokens = payload.usage?.completion_tokens ?? payload.usage?.output_tokens ?? Math.ceil(output.length / 4);
     const result: ModelResult = {
       modelId: model.id,
       modelName: model.name,
@@ -122,7 +140,7 @@ export async function POST(request: Request) {
         completionTokens,
         totalTokens: payload.usage?.total_tokens ?? promptTokens + completionTokens,
       },
-      estimatedCost: estimateCost(model.id, promptTokens, completionTokens),
+      estimatedCost: estimateCost(model.id, promptTokens, completionTokens, [model]),
       mode: "live",
     };
 
