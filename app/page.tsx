@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { DEFAULT_MODEL_IDS, MODEL_CATALOG, PRICING_AS_OF, getModel } from "../lib/models";
-import type { ApiError, AutoPickRecommendation, ModelResult, RunMode, Synthesis } from "../lib/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_MODEL_IDS, MODEL_CATALOG, PRICING_AS_OF, getModel, type ModelConfig } from "../lib/models";
+import type { ApiError, AutoPickRecommendation, ModelDirectory, ModelResult, RunMode, Synthesis } from "../lib/types";
 
 const examples = [
   {
@@ -36,7 +36,8 @@ function formatLatency(milliseconds: number) {
   return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(1)} sec`;
 }
 
-function formatCost(cost: number) {
+function formatCost(cost: number | null) {
+  if (cost === null) return "Rate unavailable";
   if (cost < 0.00001) return "<$0.00001";
   if (cost < 0.001) return `$${cost.toFixed(5)}`;
   return `$${cost.toFixed(3)}`;
@@ -72,11 +73,11 @@ function ResponseText({ text }: { text: string }) {
   );
 }
 
-function SourcePills({ sources, onSource }: { sources: string[]; onSource: (source: string) => void }) {
+function SourcePills({ sources, models, onSource }: { sources: string[]; models: ModelConfig[]; onSource: (source: string) => void }) {
   return (
     <span className="source-pills" aria-label="Source models">
       {sources.map((source) => {
-        const model = getModel(source);
+        const model = getModel(source, models);
         return (
           <button type="button" key={source} onClick={() => onSource(source)} title={`View ${model?.name ?? source} response`}>
             {model?.shortName ?? source}
@@ -98,7 +99,43 @@ export default function Home() {
   const [hasRun, setHasRun] = useState(false);
   const [autoPick, setAutoPick] = useState<AutoPickState>({ status: "idle" });
   const [autoPickAdjusted, setAutoPickAdjusted] = useState(false);
+  const [models, setModels] = useState<ModelConfig[]>(MODEL_CATALOG);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelQuery, setModelQuery] = useState("");
+  const [providerFilter, setProviderFilter] = useState("All providers");
+  const [directorySource, setDirectorySource] = useState<ModelDirectory["source"]>("fixture");
+  const [directoryNotice, setDirectoryNotice] = useState<string | null>(null);
   const resultsRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/models")
+      .then((response) => readApiPayload(response, "The model catalog could not be loaded."))
+      .then((payload) => {
+        if (!active) return;
+        const directory = payload as ModelDirectory;
+        if (!Array.isArray(directory.models) || directory.models.length < 3) throw new Error("The model catalog is unavailable.");
+        setModels(directory.models);
+        setDirectorySource(directory.source);
+        setDirectoryNotice(directory.notice ?? null);
+        setSelectedIds((current) => {
+          const availableIds = new Set(directory.models.map((model) => model.id));
+          const next = current.filter((modelId) => availableIds.has(modelId));
+          for (const modelId of [...DEFAULT_MODEL_IDS, ...directory.models.map((model) => model.id)]) {
+            if (next.length >= 3) break;
+            if (availableIds.has(modelId) && !next.includes(modelId)) next.push(modelId);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        if (active) setDirectoryNotice("Live discovery is unavailable; the built-in compatible catalog is shown.");
+      })
+      .finally(() => {
+        if (active) setModelsLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   const successfulResults = useMemo(
     () => selectedIds.map((id) => results[id]).filter((state): state is { status: "success"; data: ModelResult } => state?.status === "success").map((state) => state.data),
@@ -107,11 +144,24 @@ export default function Home() {
   const fastestId = successfulResults.length
     ? [...successfulResults].sort((a, b) => a.latencyMs - b.latencyMs)[0].modelId
     : null;
-  const cheapestId = successfulResults.length
-    ? [...successfulResults].sort((a, b) => a.estimatedCost - b.estimatedCost)[0].modelId
+  const pricedResults = successfulResults.filter((result) => result.estimatedCost !== null);
+  const cheapestId = pricedResults.length
+    ? [...pricedResults].sort((a, b) => (a.estimatedCost ?? Infinity) - (b.estimatedCost ?? Infinity))[0].modelId
     : null;
   const comparisonRunning = selectedIds.some((id) => results[id]?.status === "loading");
   const controlsBusy = comparisonRunning || synthesis.status === "loading" || autoPick.status === "loading";
+  const providers = useMemo(
+    () => ["All providers", ...new Set(models.map((model) => model.provider.split(" · ")[0]))],
+    [models],
+  );
+  const visibleModels = useMemo(() => {
+    const normalizedQuery = modelQuery.trim().toLowerCase();
+    return models.filter((model) => {
+      const provider = model.provider.split(" · ")[0];
+      return (providerFilter === "All providers" || provider === providerFilter)
+        && (!normalizedQuery || `${model.name} ${model.id} ${model.provider} ${model.strength}`.toLowerCase().includes(normalizedQuery));
+    });
+  }, [modelQuery, models, providerFilter]);
 
   function updatePrompt(nextPrompt: string) {
     setPrompt(nextPrompt);
@@ -148,7 +198,7 @@ export default function Home() {
       const recommendedIds = Array.isArray(recommendation.selections)
         ? recommendation.selections.map((selection) => selection.modelId)
         : [];
-      const validIds = recommendedIds.filter((modelId) => Boolean(getModel(modelId)));
+      const validIds = recommendedIds.filter((modelId) => Boolean(getModel(modelId, models)));
       if (validIds.length !== 3 || new Set(validIds).size !== 3) {
         throw new Error("Auto-pick did not return three valid models. Your manual selection is unchanged.");
       }
@@ -296,7 +346,7 @@ export default function Home() {
               <span className="step-number">02</span>
               <h2>Your model council</h2>
             </div>
-            <span className="selection-count">{selectedIds.length} selected</span>
+            <span className="selection-count">{selectedIds.length} / 3 selected</span>
           </div>
 
           <button
@@ -313,10 +363,41 @@ export default function Home() {
             <span className="auto-pick-arrow" aria-hidden="true">{autoPick.status === "loading" ? "•••" : "→"}</span>
           </button>
 
-          <div className="model-grid">
-            {MODEL_CATALOG.map((model, index) => {
+          <div className="selected-council" aria-label="Selected council">
+            {selectedIds.map((modelId, index) => {
+              const model = getModel(modelId, models);
+              return model ? <span key={modelId}><small>Seat {index + 1}</small>{model.name}</span> : null;
+            })}
+          </div>
+
+          <div className="model-browser-tools">
+            <label>
+              <span className="sr-only">Search all models</span>
+              <input
+                type="search"
+                value={modelQuery}
+                onChange={(event) => setModelQuery(event.target.value)}
+                placeholder="Search all models…"
+              />
+            </label>
+            <label>
+              <span className="sr-only">Filter by provider</span>
+              <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+                {providers.map((provider) => <option key={provider}>{provider}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="catalog-meta">
+            <span>{modelsLoading ? "Loading DigitalOcean catalog…" : `${visibleModels.length} of ${models.length} compatible models`}</span>
+            <span>{directorySource === "digitalocean" ? "Live catalog" : directorySource === "fixture" ? "Demo catalog" : "Fallback catalog"}</span>
+          </div>
+
+          <div className="model-grid model-browser-grid">
+            {visibleModels.map((model) => {
               const selected = selectedIds.includes(model.id);
               const selectionBlocked = !selected && selectedIds.length >= 3;
+              const modelIndex = models.findIndex((candidate) => candidate.id === model.id) + 1;
               return (
                 <button
                   className={`model-option ${model.accent} ${selected ? "selected" : ""}`}
@@ -328,13 +409,16 @@ export default function Home() {
                   onClick={() => toggleModel(model.id)}
                 >
                   <span className="checkmark">{selected ? "✓" : "+"}</span>
-                  <span className="model-index">0{index + 1}</span>
+                  <span className="model-index">{String(modelIndex).padStart(2, "0")}</span>
                   <strong>{model.name}</strong>
-                  <small>{model.strength}</small>
+                  <small>{model.provider.split(" · ")[0]} · {model.strength}</small>
                 </button>
               );
             })}
+            {!visibleModels.length && <p className="model-empty">No compatible models match this search.</p>}
           </div>
+
+          {directoryNotice && <p className="catalog-notice">{directoryNotice}</p>}
 
           <button
             className="compare-button"
@@ -367,7 +451,7 @@ export default function Home() {
             {autoPick.data.selections.map((selection) => (
               <div className="auto-pick-selection" key={selection.modelId}>
                 <span className="selection-role">{selection.role}</span>
-                <strong>{getModel(selection.modelId)?.name ?? selection.modelId}</strong>
+                <strong>{getModel(selection.modelId, models)?.name ?? selection.modelId}</strong>
                 <p>{selection.reason}</p>
               </div>
             ))}
@@ -409,7 +493,7 @@ export default function Home() {
 
           <div className="results-grid">
             {selectedIds.map((modelId) => {
-              const model = getModel(modelId)!;
+              const model = getModel(modelId, models)!;
               const state = results[modelId];
               const isPreferred = preferred === modelId;
               return (
@@ -462,7 +546,7 @@ export default function Home() {
             })}
           </div>
 
-          <p className="pricing-caption">Costs are estimates using published token rates as of {PRICING_AS_OF}. Actual billing may vary.</p>
+          <p className="pricing-caption">Costs are estimates using configured published rates as of {PRICING_AS_OF}. “Rate unavailable” appears when the discovery API does not provide pricing.</p>
 
           {(synthesis.status === "loading" || synthesis.status === "success" || synthesis.status === "error") && (
             <div className="synthesis-wrap">
@@ -505,7 +589,7 @@ export default function Home() {
                     {synthesis.data.answer.map((section, index) => (
                       <div className="provenance-section" key={`${section.text}-${index}`}>
                         <p>{section.text}</p>
-                        <SourcePills sources={section.sources} onSource={scrollToSource} />
+                        <SourcePills sources={section.sources} models={models} onSource={scrollToSource} />
                       </div>
                     ))}
                   </div>
@@ -516,7 +600,7 @@ export default function Home() {
                       {synthesis.data.agreements.map((agreement, index) => (
                         <div className="analysis-item" key={`${agreement.text}-${index}`}>
                           <p>{agreement.text}</p>
-                          <SourcePills sources={agreement.sources} onSource={scrollToSource} />
+                          <SourcePills sources={agreement.sources} models={models} onSource={scrollToSource} />
                         </div>
                       ))}
                     </div>
@@ -528,7 +612,7 @@ export default function Home() {
                           <strong>{disagreement.topic}</strong>
                           {disagreement.positions.map((position) => (
                             <p key={`${position.modelId}-${position.text}`}>
-                              <button type="button" onClick={() => scrollToSource(position.modelId)}>{getModel(position.modelId)?.shortName ?? position.modelId}</button>
+                              <button type="button" onClick={() => scrollToSource(position.modelId)}>{getModel(position.modelId, models)?.shortName ?? position.modelId}</button>
                               {position.text}
                             </p>
                           ))}
@@ -549,7 +633,7 @@ export default function Home() {
           {preferred && (
             <div className="decision-toast" role="status">
               <span className="decision-check">✓</span>
-              <div><strong>Decision captured</strong><p>You preferred {preferred === "combined" ? "the transparent combined answer" : getModel(preferred)?.name}.</p></div>
+              <div><strong>Decision captured</strong><p>You preferred {preferred === "combined" ? "the transparent combined answer" : getModel(preferred, models)?.name}.</p></div>
               <button type="button" onClick={() => setPreferred(null)} aria-label="Clear selection">×</button>
             </div>
           )}

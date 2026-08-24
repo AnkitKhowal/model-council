@@ -21,8 +21,9 @@ body {
     var(--canvas);
   font-family: var(--font-geist-sans), Arial, sans-serif;
 }
-button, textarea { font: inherit; }
+button, textarea, input, select { font: inherit; }
 button { cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .app-shell { min-height: 100vh; }
 .topbar {
@@ -69,7 +70,7 @@ button { cursor: pointer; }
 .hero h1 span { color: var(--ocean); }
 .hero p { max-width: 660px; margin: 0 auto; color: var(--muted); font-size: 18px; line-height: 1.6; letter-spacing: -0.01em; }
 
-.workspace { width: min(1120px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; align-items: stretch; }
+.workspace { width: min(1120px, calc(100% - 40px)); margin: 0 auto; display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; align-items: start; }
 .composer-card, .models-card, .results-preview, .result-card, .synthesis-card {
   background: rgba(255,255,255,.94);
   border: 1px solid var(--line);
@@ -129,7 +130,21 @@ textarea:focus { border-color: var(--ocean); box-shadow: 0 0 0 4px rgba(0, 105, 
 .auto-pick-copy > span { color: #65758e; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .auto-pick-arrow { margin-left: auto; color: var(--ocean); font-weight: 800; }
 
+.selected-council { margin-bottom: 11px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.selected-council > span { min-width: 0; padding: 8px 9px; border: 1px solid #d8e4f5; border-radius: 10px; color: #244365; background: #f5f9ff; font-size: 9px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selected-council small { display: block; margin-bottom: 3px; color: #7c8da5; font-size: 7px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.model-browser-tools { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(130px, 1fr); gap: 7px; }
+.model-browser-tools label { min-width: 0; }
+.model-browser-tools input, .model-browser-tools select { width: 100%; height: 37px; border: 1px solid #d5deea; border-radius: 10px; outline: none; color: #33445c; background: white; font-size: 10px; }
+.model-browser-tools input { padding: 0 11px; }
+.model-browser-tools select { padding: 0 28px 0 9px; }
+.model-browser-tools input:focus, .model-browser-tools select:focus { border-color: #7daaf0; box-shadow: 0 0 0 3px rgba(0,105,255,.08); }
+.catalog-meta { min-height: 27px; padding: 8px 2px 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #8290a4; font-size: 8px; }
+.catalog-meta span:last-child { flex: 0 0 auto; color: #0d795b; font-family: var(--font-geist-mono), monospace; font-weight: 700; text-transform: uppercase; }
+
 .model-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.model-browser-grid { max-height: 244px; padding-right: 4px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #c4d0e0 transparent; scrollbar-width: thin; }
+.model-browser-grid .model-option { min-height: 78px; }
 .model-option {
   position: relative;
   min-height: 88px;
@@ -159,6 +174,8 @@ textarea:focus { border-color: var(--ocean); box-shadow: 0 0 0 4px rgba(0, 105, 
 .model-index { margin-bottom: 10px; color: #94a0b2; font-family: var(--font-geist-mono), monospace; font-size: 9px; }
 .model-option strong { padding-right: 18px; font-size: 12px; line-height: 1.25; }
 .model-option small { margin-top: 3px; color: #7b8799; font-size: 9px; }
+.model-empty { grid-column: 1 / -1; margin: 0; padding: 28px 12px; border: 1px dashed #d7e0eb; border-radius: 12px; color: #7b899d; text-align: center; font-size: 10px; }
+.catalog-notice { margin: 8px 1px 0; color: #8a6a2d; font-size: 8px; line-height: 1.4; }
 .compare-button {
   width: 100%;
   margin-top: 14px;
@@ -360,6 +377,8 @@ footer p { margin: 0; }
   .hero h1 { font-size: 44px; }
   .hero p { font-size: 15px; }
   .composer-card, .models-card { padding: 18px; }
+  .selected-council { grid-template-columns: 1fr; }
+  .model-browser-tools { grid-template-columns: 1fr; }
   textarea { height: 160px; }
   .model-option { min-height: 94px; }
   .results-preview { align-items: flex-start; }
