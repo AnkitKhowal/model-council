@@ -1,4 +1,5 @@
 import { createFixtureSynthesis } from "../../../lib/fixtures";
+import { getModelDirectory } from "../../../lib/model-directory";
 import { getModel } from "../../../lib/models";
 import type { ApiError, ModelResult, Synthesis } from "../../../lib/types";
 
@@ -78,8 +79,9 @@ export async function POST(request: Request) {
     return jsonError("Synthesis requires two or three successful model responses.", 400, "INVALID_RESULT_COUNT");
   }
 
+  const directory = await getModelDirectory();
   const validResults = results.filter((result) =>
-    result && typeof result.modelId === "string" && getModel(result.modelId) &&
+    result && typeof result.modelId === "string" && getModel(result.modelId, directory.models) &&
     typeof result.output === "string" && result.output.trim().length > 0 && result.output.length <= 12_000
   );
   if (validResults.length !== results.length || new Set(validResults.map((result) => result.modelId)).size !== results.length) {
@@ -95,7 +97,7 @@ export async function POST(request: Request) {
   if (!apiKey) return jsonError("Live synthesis is not configured.", 503, "INFERENCE_KEY_MISSING");
 
   const synthesizerId = process.env.SYNTHESIZER_MODEL_ID ?? "openai-gpt-oss-120b";
-  if (!getModel(synthesizerId)) return jsonError("The configured synthesizer is not approved.", 503, "INVALID_SYNTHESIZER");
+  if (!getModel(synthesizerId, directory.models)) return jsonError("The configured synthesizer is not available.", 503, "INVALID_SYNTHESIZER");
 
   const validIds = new Set(validResults.map((result) => result.modelId));
   const baseUrl = (process.env.DIGITALOCEAN_INFERENCE_BASE_URL ?? "https://inference.do-ai.run/v1").replace(/\/$/, "");
