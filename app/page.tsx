@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { DEFAULT_MODEL_IDS, MODEL_CATALOG, PRICING_AS_OF, getModel } from "../lib/models";
-import type { ApiError, ModelResult, RunMode, Synthesis } from "../lib/types";
+import type { ApiError, AutoPickRecommendation, ModelResult, RunMode, Synthesis } from "../lib/types";
 
 const examples = [
   {
@@ -24,6 +24,12 @@ type SynthesisState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "success"; data: Synthesis }
+  | { status: "error"; error: string };
+
+type AutoPickState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; data: AutoPickRecommendation }
   | { status: "error"; error: string };
 
 function formatLatency(milliseconds: number) {
@@ -90,6 +96,8 @@ export default function Home() {
   const [runPrompt, setRunPrompt] = useState("");
   const [runMode, setRunMode] = useState<RunMode | null>(null);
   const [hasRun, setHasRun] = useState(false);
+  const [autoPick, setAutoPick] = useState<AutoPickState>({ status: "idle" });
+  const [autoPickAdjusted, setAutoPickAdjusted] = useState(false);
   const resultsRef = useRef<HTMLElement>(null);
 
   const successfulResults = useMemo(
@@ -103,14 +111,61 @@ export default function Home() {
     ? [...successfulResults].sort((a, b) => a.estimatedCost - b.estimatedCost)[0].modelId
     : null;
   const comparisonRunning = selectedIds.some((id) => results[id]?.status === "loading");
+  const controlsBusy = comparisonRunning || synthesis.status === "loading" || autoPick.status === "loading";
+
+  function updatePrompt(nextPrompt: string) {
+    setPrompt(nextPrompt);
+    setAutoPick({ status: "idle" });
+    setAutoPickAdjusted(false);
+  }
 
   function toggleModel(modelId: string) {
-    if (comparisonRunning || synthesis.status === "loading") return;
+    if (controlsBusy) return;
+    if (autoPick.status === "success") setAutoPickAdjusted(true);
     setSelectedIds((current) => {
       if (current.includes(modelId)) return current.length <= 2 ? current : current.filter((id) => id !== modelId);
       if (current.length >= 3) return current;
       return [...current, modelId];
     });
+  }
+
+  async function runAutoPick() {
+    const currentPrompt = prompt.trim();
+    if (!currentPrompt || controlsBusy) return;
+
+    setAutoPick({ status: "loading" });
+    setAutoPickAdjusted(false);
+    try {
+      const response = await fetch("/api/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: currentPrompt }),
+      });
+      const payload = await readApiPayload(response, "The model selector returned an unreadable response.");
+      if (!response.ok) throw new Error(getErrorMessage(payload, "Auto-pick could not analyze this prompt."));
+
+      const recommendation = payload as AutoPickRecommendation;
+      const recommendedIds = Array.isArray(recommendation.selections)
+        ? recommendation.selections.map((selection) => selection.modelId)
+        : [];
+      const validIds = recommendedIds.filter((modelId) => Boolean(getModel(modelId)));
+      if (validIds.length !== 3 || new Set(validIds).size !== 3) {
+        throw new Error("Auto-pick did not return three valid models. Your manual selection is unchanged.");
+      }
+
+      setSelectedIds(validIds);
+      setAutoPick({ status: "success", data: recommendation });
+      setHasRun(false);
+      setResults({});
+      setSynthesis({ status: "idle" });
+      setPreferred(null);
+      setRunMode(null);
+    } catch (error) {
+      setAutoPick({
+        status: "error",
+        error: error instanceof Error ? error.message : "Auto-pick is unavailable. You can still choose models manually.",
+      });
+    }
   }
 
   function scrollToSource(modelId: string) {
@@ -221,14 +276,14 @@ export default function Home() {
             aria-label="Prompt"
             maxLength={4000}
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
+            onChange={(event) => updatePrompt(event.target.value)}
             placeholder="Enter a prompt to compare across models…"
           />
 
           <div className="example-row">
             <span>Try an example</span>
             {examples.map((example) => (
-              <button key={example.label} type="button" onClick={() => setPrompt(example.prompt)}>
+              <button key={example.label} type="button" onClick={() => updatePrompt(example.prompt)}>
                 {example.label}
               </button>
             ))}
@@ -244,6 +299,20 @@ export default function Home() {
             <span className="selection-count">{selectedIds.length} selected</span>
           </div>
 
+          <button
+            className="auto-pick-button"
+            type="button"
+            onClick={runAutoPick}
+            disabled={!prompt.trim() || controlsBusy}
+          >
+            <span className="auto-pick-spark" aria-hidden="true">✦</span>
+            <span className="auto-pick-copy">
+              <strong>Auto-pick <small>Beta</small></strong>
+              <span>{autoPick.status === "loading" ? "Analyzing task and complexity…" : "Let the gateway recommend a balanced council"}</span>
+            </span>
+            <span className="auto-pick-arrow" aria-hidden="true">{autoPick.status === "loading" ? "•••" : "→"}</span>
+          </button>
+
           <div className="model-grid">
             {MODEL_CATALOG.map((model, index) => {
               const selected = selectedIds.includes(model.id);
@@ -255,7 +324,7 @@ export default function Home() {
                   type="button"
                   aria-pressed={selected}
                   aria-label={`${selected ? "Remove" : "Add"} ${model.name}`}
-                  disabled={selectionBlocked || comparisonRunning || synthesis.status === "loading"}
+                  disabled={selectionBlocked || controlsBusy}
                   onClick={() => toggleModel(model.id)}
                 >
                   <span className="checkmark">{selected ? "✓" : "+"}</span>
@@ -271,7 +340,7 @@ export default function Home() {
             className="compare-button"
             type="button"
             onClick={runComparison}
-            disabled={!prompt.trim() || selectedIds.length < 2 || comparisonRunning || synthesis.status === "loading"}
+            disabled={!prompt.trim() || selectedIds.length < 2 || controlsBusy}
           >
             <span>{comparisonRunning ? "Council is thinking…" : `Compare ${selectedIds.length} models`}</span>
             <span aria-hidden="true">{comparisonRunning ? "•••" : "→"}</span>
@@ -279,6 +348,44 @@ export default function Home() {
           <p className="privacy-note">Your API key stays on the server. Prompts are not stored.</p>
         </div>
       </section>
+
+      {autoPick.status === "success" && (
+        <section className="auto-pick-panel" aria-live="polite" aria-label="Auto-pick recommendation">
+          <div className="auto-pick-panel-heading">
+            <div>
+              <span className="gateway-label"><span aria-hidden="true">✦</span> Gateway recommendation</span>
+              <h2>Why this council?</h2>
+            </div>
+            <div className="routing-tags">
+              <span>{autoPick.data.complexity} complexity</span>
+              <span>{autoPick.data.taskType}</span>
+              {autoPickAdjusted && <span className="adjusted-tag">Adjusted by you</span>}
+            </div>
+          </div>
+          <p className="auto-pick-summary">{autoPick.data.summary}</p>
+          <div className="auto-pick-list">
+            {autoPick.data.selections.map((selection) => (
+              <div className="auto-pick-selection" key={selection.modelId}>
+                <span className="selection-role">{selection.role}</span>
+                <strong>{getModel(selection.modelId)?.name ?? selection.modelId}</strong>
+                <p>{selection.reason}</p>
+              </div>
+            ))}
+          </div>
+          <div className="auto-pick-footnote">
+            <span>Recommendations are explainable, not quality scores. Swap any model before running.</span>
+            <span>{autoPick.data.method === "ai" ? "AI-routed" : "Rule-routed"}</span>
+          </div>
+          {autoPick.data.notice && <p className="auto-pick-notice">{autoPick.data.notice}</p>}
+        </section>
+      )}
+
+      {autoPick.status === "error" && (
+        <section className="auto-pick-panel auto-pick-error" role="status">
+          <div className="warning-mark">!</div>
+          <div><strong>Auto-pick is unavailable</strong><p>{autoPick.error}</p><small>Your manual model controls still work.</small></div>
+        </section>
+      )}
 
       {!hasRun ? (
         <section className="results-preview" aria-label="Comparison results preview">
