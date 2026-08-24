@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
           },
           { role: "user", content: prompt },
         ],
-        max_tokens: 900,
+        max_completion_tokens: 900,
         temperature: 0.35,
       }),
       cache: "no-store",
@@ -90,10 +91,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const payload = await upstream.json() as {
+    const rawPayload = await upstream.text();
+    let payload: {
       choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
+    try {
+      payload = JSON.parse(rawPayload) as typeof payload;
+    } catch {
+      return jsonError(`${model.name} returned an invalid response. Please try again.`, 502, "INVALID_UPSTREAM_RESPONSE");
+    }
     const rawContent = payload.choices?.[0]?.message?.content;
     const output = typeof rawContent === "string"
       ? rawContent.trim()
