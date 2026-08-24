@@ -67,6 +67,19 @@ test("returns three explainable, allowlisted Auto-pick recommendations", async (
   });
 });
 
+test("exposes the complete compatible model directory without media or embedding models", async () => {
+  const response = await request("/api/models");
+  assert.equal(response.status, 200);
+
+  const directory = await response.json();
+  assert.equal(directory.source, "fixture");
+  assert.ok(directory.models.length > 40);
+  assert.equal(new Set(directory.models.map((model) => model.id)).size, directory.models.length);
+  assert.ok(directory.models.some((model) => model.id === "openai-gpt-5.5"));
+  assert.ok(directory.models.some((model) => model.id === "anthropic-claude-opus-5"));
+  assert.ok(directory.models.every((model) => !/(embedding|rerank|gpt-image|tts|text-to-audio|stable-diffusion)/i.test(model.id)));
+});
+
 test("rejects empty prompts and unapproved models", async () => {
   const [emptyPrompt, badModel] = await Promise.all([
     request("/api/invoke", {
