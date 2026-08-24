@@ -59,7 +59,7 @@ test("returns three explainable, allowlisted Auto-pick recommendations", async (
   assert.equal(new Set(recommendation.selections.map((selection) => selection.modelId)).size, 3);
   assert.deepEqual(
     recommendation.selections.map((selection) => selection.role),
-    ["Best fit", "Complement", "Efficient challenger"],
+    ["Best fit", "Complement", "Challenger"],
   );
   recommendation.selections.forEach((selection) => {
     assert.ok(allowed.has(selection.modelId));
