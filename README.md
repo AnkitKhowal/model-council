@@ -2,7 +2,7 @@
 
 > Ask once. Decide with confidence.
 
-Model Council is a take-home prototype for reducing “model FOMO.” It sends one prompt to several models through DigitalOcean Serverless Inference, progressively shows each independent response, and produces a transparent combined view that preserves agreements, disagreements, and source-model provenance.
+Model Council is a take-home prototype for reducing “model FOMO.” It can recommend a balanced three-model council for each prompt, sends that prompt through DigitalOcean Serverless Inference, progressively shows each independent response, and produces a transparent combined view that preserves agreements, disagreements, and source-model provenance.
 
 ![Model Council social preview](public/og.png)
 
@@ -10,11 +10,12 @@ Model Council is a take-home prototype for reducing “model FOMO.” It sends o
 
 Customers do not need another generic benchmark telling them which model is universally “best.” They need evidence for their prompt, their operating constraints, and their definition of quality.
 
-Model Council therefore separates three jobs:
+Model Council therefore separates four jobs:
 
-1. **Compare:** Show the original responses without hiding inconvenient differences.
-2. **Understand:** Display objective latency, token, and estimated-cost measurements.
-3. **Combine:** Synthesize useful common ground while linking every section back to the contributing models.
+1. **Route:** Recommend three complementary models using task type, complexity, cost, and latency—not complexity alone.
+2. **Compare:** Show the original responses without hiding inconvenient differences.
+3. **Understand:** Display objective latency, token, and estimated-cost measurements.
+4. **Combine:** Synthesize useful common ground while linking every section back to the contributing models.
 
 The product intentionally avoids invented quality scores. Users can make and record their own preference after reviewing the evidence.
 
@@ -23,6 +24,7 @@ For live combined answers, the app prefers DigitalOcean's opt-in **Model Synthes
 ## Experience
 
 - Submit up to 4,000 characters and select two or three curated models.
+- Use **Auto-pick Beta** to preview three recommended models and a concrete reason for each selection, then edit the council before running it.
 - Receive independent results progressively; one failure never removes successful responses.
 - Compare latency, token usage, and estimated cost using a versioned pricing table.
 - Review a combined answer with clickable source-model badges.
@@ -35,10 +37,12 @@ For live combined answers, the app prefers DigitalOcean's opt-in **Model Synthes
 ```mermaid
 flowchart LR
   U[Browser] --> W[Next.js application]
+  W --> A[POST /api/recommend]
+  A --> DO[DigitalOcean Serverless Inference]
   W --> I1[POST /api/invoke]
   W --> I2[POST /api/invoke]
   W --> I3[POST /api/invoke]
-  I1 & I2 & I3 --> DO[DigitalOcean Serverless Inference]
+  I1 & I2 & I3 --> DO
   W --> S[POST /api/synthesize]
   S --> DO
   DO --> R[Independent responses]
@@ -81,8 +85,9 @@ Create a model access key under DigitalOcean **Inference → Serverless Inferenc
 DEMO_MODE=false
 DIGITALOCEAN_INFERENCE_KEY=your-server-side-key
 DIGITALOCEAN_INFERENCE_BASE_URL=https://inference.do-ai.run/v1
-SYNTHESIZER_MODEL_ID=openai-gpt-oss-120b
-USE_NATIVE_MODEL_SYNTHESIS=true
+AUTO_PICK_MODEL_ID=openai-gpt-oss-20b
+SYNTHESIZER_MODEL_ID=openai-gpt-oss-20b
+USE_NATIVE_MODEL_SYNTHESIS=false
 ```
 
 Never prefix the inference key with `NEXT_PUBLIC_`, commit it, paste it into issue reports, or expose it in client-side code.
@@ -97,6 +102,10 @@ The allowlist currently uses these active serverless model IDs:
 Model availability and pricing change over time. Update `lib/models.ts` against the [DigitalOcean model catalog](https://docs.digitalocean.com/products/inference/details/models/) and [published pricing](https://docs.digitalocean.com/products/inference/details/pricing/) before a production launch.
 
 ## API contracts
+
+### `POST /api/recommend`
+
+Accepts a prompt and returns exactly three allowlisted model IDs with roles, selection reasons, task type, complexity, and routing priority. In live mode, a lightweight DigitalOcean-hosted model performs the classification. Invalid output, timeouts, a missing key, or selector failure degrade to the same response contract using transparent local rules, so Auto-pick never blocks manual comparison.
 
 ### `POST /api/invoke`
 
@@ -121,7 +130,7 @@ npm run lint
 npm test
 ```
 
-The test suite verifies server rendering, input validation, the independent-result contract, objective metrics, and that synthesis provenance only references submitted responses.
+The test suite verifies server rendering, input validation, allowlisted and explainable Auto-pick recommendations, the independent-result contract, objective metrics, and that synthesis provenance only references submitted responses.
 
 ## Deploy to DigitalOcean App Platform
 
@@ -140,6 +149,7 @@ App Platform sets `PORT`; the production server listens on that value automatica
 - **No persistence:** Keeps the assignment focused and prevents prompt retention. Saved comparisons belong in a later phase.
 - **Manual price configuration:** Makes estimates explainable, but requires regular catalog updates.
 - **Model-generated synthesis:** Useful but not ground truth. Originals and disagreements always remain visible.
+- **Explainable routing:** Auto-pick is a recommendation, not an invisible quality score. The user sees and can change every model before inference begins.
 - **No authentication or public rate limiting:** Appropriate for a controlled take-home demo, not an unrestricted production deployment.
 - **Chat Completions compatibility:** Maximizes consistency across the selected open models; model-specific advanced features are intentionally deferred.
 
@@ -147,14 +157,14 @@ App Platform sets `PORT`; the production server listens on that value automatica
 
 - **Next:** Saved comparisons, blind model names, human voting, reusable prompt sets, and custom rubrics.
 - **Then:** DigitalOcean Evaluations for customer datasets and quality-versus-cost analysis.
-- **Later:** Convert winning experiments into Inference Router policies with fallbacks and operating constraints.
+- **Later:** Convert winning experiments into DigitalOcean Inference Router policies with fallbacks and operating constraints. The current selector returns a visible three-model council; a production router would choose a single serving path after the user has learned what wins.
 - **Long term:** Champion–challenger traffic, model/version drift alerts, automatic re-evaluation, and workload-specific Model Autopilot.
 
 ## Suggested review demo
 
-1. Choose the architecture example and compare three models.
-2. Point out that responses complete independently.
-3. Compare objective latency, token, and cost data.
-4. Open the combined answer and use its source badges to jump back to the evidence.
-5. Show an algorithm or failure-behavior disagreement instead of hiding it.
-6. Select the response you trust and close with the evaluation-and-routing roadmap.
+1. Choose the architecture example and select **Auto-pick Beta**.
+2. Explain the three recommended roles, then swap a model to show that the user stays in control.
+3. Run the council and point out that responses complete independently.
+4. Compare objective latency, token, and cost data.
+5. Open the combined answer and use its source badges to jump back to the evidence.
+6. Show an algorithm or failure-behavior disagreement instead of hiding it, then select the answer you trust.
