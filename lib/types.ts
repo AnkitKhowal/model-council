@@ -2,7 +2,7 @@ export type RunMode = "demo" | "live";
 
 export type AutoPickComplexity = "low" | "medium" | "high";
 
-export type AutoPickRole = "Best fit" | "Complement" | "Efficient challenger";
+export type AutoPickRole = "Best fit" | "Complement" | "Challenger";
 
 export type AutoPickRecommendation = {
   taskType: string;

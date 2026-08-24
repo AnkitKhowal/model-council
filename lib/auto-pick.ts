@@ -8,7 +8,7 @@ const MODEL_IDS = {
   efficient: "openai-gpt-oss-20b",
 } as const;
 
-const ROLES: AutoPickRole[] = ["Best fit", "Complement", "Efficient challenger"];
+const ROLES: AutoPickRole[] = ["Best fit", "Complement", "Challenger"];
 
 const MODEL_REASONS: Record<string, string> = {
   [MODEL_IDS.deepReasoning]: "Leads on multi-step reasoning, constraints, and tradeoffs.",
