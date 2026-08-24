@@ -41,6 +41,19 @@ function getErrorMessage(payload: unknown, fallback: string) {
   return typeof error?.error === "string" ? error.error : fallback;
 }
 
+async function readApiPayload(response: Response, fallback: string) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return { error: response.ok ? fallback : `The service returned HTTP ${response.status}. Please try again.` } satisfies ApiError;
+  }
+
+  try {
+    return await response.json() as unknown;
+  } catch {
+    return { error: fallback } satisfies ApiError;
+  }
+}
+
 function ResponseText({ text }: { text: string }) {
   return (
     <div className="response-copy">
@@ -111,7 +124,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: currentPrompt, modelId }),
       });
-      const payload = await response.json();
+      const payload = await readApiPayload(response, "This model returned an unreadable response. Please try again.");
       if (!response.ok) throw new Error(getErrorMessage(payload, "This model could not complete the request."));
 
       const data = payload as ModelResult;
@@ -133,7 +146,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: currentPrompt, results: completed }),
       });
-      const payload = await response.json();
+      const payload = await readApiPayload(response, "The synthesis service returned an unreadable response.");
       if (!response.ok) throw new Error(getErrorMessage(payload, "The comparison could not be synthesized."));
 
       const data = payload as Synthesis;
