@@ -29,8 +29,42 @@ test("server-renders the Model Council experience", async () => {
   assert.match(html, /<title>Model Council/);
   assert.match(html, /Ask once\. Decide/);
   assert.match(html, /DigitalOcean Gradient/);
+  assert.match(html, /Auto-pick/);
   assert.match(html, /Compare 3 models/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/);
+});
+
+test("returns three explainable, allowlisted Auto-pick recommendations", async () => {
+  const response = await request("/api/recommend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: "Design a production API architecture and evaluate its scaling, security, and failure tradeoffs.",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  const recommendation = await response.json();
+  const allowed = new Set([
+    "openai-gpt-oss-120b",
+    "llama-4-maverick",
+    "qwen3.5-397b-a17b",
+    "openai-gpt-oss-20b",
+  ]);
+
+  assert.equal(recommendation.mode, "demo");
+  assert.equal(recommendation.method, "rules");
+  assert.equal(recommendation.complexity, "high");
+  assert.equal(recommendation.selections.length, 3);
+  assert.equal(new Set(recommendation.selections.map((selection) => selection.modelId)).size, 3);
+  assert.deepEqual(
+    recommendation.selections.map((selection) => selection.role),
+    ["Best fit", "Complement", "Efficient challenger"],
+  );
+  recommendation.selections.forEach((selection) => {
+    assert.ok(allowed.has(selection.modelId));
+    assert.ok(selection.reason.length > 20);
+  });
 });
 
 test("rejects empty prompts and unapproved models", async () => {
