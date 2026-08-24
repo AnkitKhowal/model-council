@@ -1,5 +1,24 @@
 export type RunMode = "demo" | "live";
 
+export type AutoPickComplexity = "low" | "medium" | "high";
+
+export type AutoPickRole = "Best fit" | "Complement" | "Efficient challenger";
+
+export type AutoPickRecommendation = {
+  taskType: string;
+  complexity: AutoPickComplexity;
+  priority: string;
+  summary: string;
+  selections: Array<{
+    modelId: string;
+    role: AutoPickRole;
+    reason: string;
+  }>;
+  mode: RunMode;
+  method: "ai" | "rules";
+  notice?: string;
+};
+
 export type Usage = {
   promptTokens: number;
   completionTokens: number;
