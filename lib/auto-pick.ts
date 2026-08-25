@@ -17,11 +17,49 @@ const MODEL_REASONS: Record<string, string> = {
   [MODEL_IDS.efficient]: "Tests whether a faster, lower-cost model is sufficient.",
 };
 
-const TECHNICAL_PATTERN = /\b(code|coding|api|architecture|architect|debug|algorithm|database|sql|distributed|infrastructure|security|software|typescript|javascript|python|kubernetes|network|latency|rate[- ]limit|scal(?:e|ing))\b/i;
+const TECHNICAL_PATTERN = /\b(code|coding|api|architecture|architect|debug|algorithms?|database|sql|distributed|infrastructure|security|software|typescript|javascript|python|kubernetes|network|latency|rate[- ]limit|scal(?:e|ing))\b/i;
 const ANALYSIS_PATTERN = /\b(analy[sz]e|evaluate|compare|strategy|tradeoffs?|recommend|decision|plan|risk|forecast|research)\b/i;
-const WRITING_PATTERN = /\b(write|rewrite|edit|email|copy|headline|blog|story|tone|summari[sz]e)\b/i;
-const SIMPLE_PATTERN = /\b(simple|simply|brief|briefly|concise|plain english|eli5|one sentence|short)\b/i;
+const WRITING_PATTERN = /\b(write|rewrite|draft|edit|email|copy|headline|blog|story|tone|apology|summari[sz]e)\b/i;
+const SIMPLE_PATTERN = /\b(simple|simply|brief|briefly|concise|concisely|plain english|eli5|one sentence|short)\b/i;
 const HIGH_STAKES_PATTERN = /\b(legal|medical|financial|security|compliance|privacy|production|proof|formal verification)\b/i;
+
+export function routingCapabilitiesForModel(modelId: string) {
+  const capabilities = new Set<string>();
+  if (/qwen|deepseek|mimo|glm|nemotron|gpt-oss/i.test(modelId)) capabilities.add("technical");
+  if (/120b|qwen3\.8|max|deepseek.*pro|ultra|kimi-k3|glm-5\.[12]|mimo.*pro/i.test(modelId)) capabilities.add("reasoning");
+  if (/20b|flash|nano|14b|minimax|gemma/i.test(modelId)) capabilities.add("efficiency");
+  if (/llama|qwen|mistral|gemma|kimi|gpt-oss/i.test(modelId)) capabilities.add("communication");
+  return [...capabilities];
+}
+
+export function requiredCapabilitiesForRecommendation(recommendation: Pick<AutoPickRecommendation, "taskType" | "complexity">) {
+  const capabilities = new Set<string>(["efficiency"]);
+  if (/software|technical/i.test(recommendation.taskType)) capabilities.add("technical");
+  if (/writing|communication|explanation|general/i.test(recommendation.taskType)) capabilities.add("communication");
+  if (/analysis|strategy/i.test(recommendation.taskType) || recommendation.complexity === "high") capabilities.add("reasoning");
+  return [...capabilities];
+}
+
+export function recommendationMeetsRoutingConstraints(
+  recommendation: AutoPickRecommendation,
+  ruleAnalysis: Pick<AutoPickRecommendation, "taskType" | "complexity" | "priority">,
+  availableModels: ModelConfig[],
+) {
+  if (
+    recommendation.taskType !== ruleAnalysis.taskType
+    || recommendation.complexity !== ruleAnalysis.complexity
+    || recommendation.priority !== ruleAnalysis.priority
+  ) return false;
+
+  const selectedIds = recommendation.selections.map((selection) => selection.modelId);
+  const selectedCapabilities = new Set(selectedIds.flatMap(routingCapabilitiesForModel));
+  const coversRequiredCapabilities = requiredCapabilitiesForRecommendation(ruleAnalysis)
+    .every((capability) => selectedCapabilities.has(capability));
+  const providerById = new Map(availableModels.map((model) => [model.id, model.provider]));
+  const selectedProviders = new Set(selectedIds.map((modelId) => providerById.get(modelId)).filter(Boolean));
+
+  return coversRequiredCapabilities && selectedProviders.size >= 2;
+}
 
 export function createRuleRecommendation(
   prompt: string,
