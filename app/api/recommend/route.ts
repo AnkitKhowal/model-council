@@ -10,7 +10,7 @@ import { getModel } from "../../../lib/models";
 import type { ApiError } from "../../../lib/types";
 
 const MAX_PROMPT_LENGTH = 4_000;
-const REQUEST_TIMEOUT_MS = 2_500;
+const REQUEST_TIMEOUT_MS = 2_000;
 
 function jsonError(error: string, status: number, code?: string) {
   return Response.json({ error, code } satisfies ApiError, { status });
