@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-08-25T07:22:26.052Z",
+  "datasetVersion": "1.0.0",
+  "caseCount": 30,
+  "target": "https://model-council-wp6iu.ondigitalocean.app",
+  "runLabel": "live-before-hybrid",
+  "overallPassed": false,
+  "metrics": {
+    "contractValidityRate": 1,
+    "allowlistComplianceRate": 1,
+    "uniqueCouncilRate": 1,
+    "roleCoverageRate": 1,
+    "taskAccuracy": 0.7333,
+    "complexityAccuracy": 0.4333,
+    "expectedCapabilityHitAt3Rate": 0.9,
+    "providerDiversityRate": 1,
+    "routingP50LatencyMs": 2744,
+    "routingP95LatencyMs": 3662
+  },
+  "methodCounts": {
+    "ai": 28,
+    "rules": 2
+  },
+  "note": "Preserved summary of the production baseline captured before the hybrid routing change. Full case findings are in the paired Markdown report."
+}
