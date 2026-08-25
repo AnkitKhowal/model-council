@@ -48,7 +48,7 @@ test("returns three explainable, allowlisted Auto-pick recommendations", async (
   const allowed = new Set([
     "openai-gpt-oss-120b",
     "llama-4-maverick",
-    "qwen3.5-397b-a17b",
+    "qwen3.8-max",
     "openai-gpt-oss-20b",
   ]);
 
@@ -67,17 +67,20 @@ test("returns three explainable, allowlisted Auto-pick recommendations", async (
   });
 });
 
-test("exposes the complete compatible model directory without media or embedding models", async () => {
+test("exposes only models that passed the dated compatibility probe", async () => {
   const response = await request("/api/models");
   assert.equal(response.status, 200);
 
   const directory = await response.json();
   assert.equal(directory.source, "fixture");
-  assert.ok(directory.models.length > 40);
+  assert.equal(directory.models.length, 20);
+  assert.equal(directory.verifiedAt, "2026-08-25T06:11:24.820Z");
   assert.equal(new Set(directory.models.map((model) => model.id)).size, directory.models.length);
-  assert.ok(directory.models.some((model) => model.id === "openai-gpt-5.5"));
-  assert.ok(directory.models.some((model) => model.id === "anthropic-claude-opus-5"));
-  assert.ok(directory.models.every((model) => !/(embedding|rerank|gpt-image|tts|text-to-audio|stable-diffusion)/i.test(model.id)));
+  assert.ok(directory.models.some((model) => model.id === "deepseek-3.2"));
+  assert.ok(directory.models.some((model) => model.id === "qwen3.8-max"));
+  assert.ok(directory.models.every((model) => !/(embedding|rerank|gpt-image|tts|text-to-audio|stable-diffusion|^router:)/i.test(model.id)));
+  assert.ok(!directory.models.some((model) => model.id === "openai-gpt-4o-mini"));
+  assert.ok(!directory.models.some((model) => model.id === "qwen3.5-397b-a17b"));
 });
 
 test("rejects empty prompts and unapproved models", async () => {
@@ -102,7 +105,7 @@ test("rejects empty prompts and unapproved models", async () => {
 
 test("returns independent demo results with objective metrics", async () => {
   const prompt = "Explain vector databases in simple terms.";
-  const modelIds = ["openai-gpt-oss-120b", "llama-4-maverick", "qwen3.5-397b-a17b"];
+  const modelIds = ["openai-gpt-oss-120b", "llama-4-maverick", "openai-gpt-oss-20b"];
   const responses = await Promise.all(modelIds.map((modelId) => request("/api/invoke", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
