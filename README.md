@@ -14,6 +14,7 @@ The main goal is simple:
 
 - **Live application:** [https://model-council-wp6iu.ondigitalocean.app](https://model-council-wp6iu.ondigitalocean.app)
 - **GitHub repository:** [https://github.com/AnkitKhowal/model-council](https://github.com/AnkitKhowal/model-council)
+- **Full product roadmap:** [Stack-ranked Model Council roadmap](ROADMAP.md)
 - **Gateway test comparison:** [Before and after Auto-pick changes](evals/results/gateway-scorecard-comparison.md)
 - **Model check report:** [DigitalOcean model compatibility report](docs/model-compatibility-2026-08-25.md)
 
@@ -547,6 +548,10 @@ This project is intentionally small and focused. It does not include:
 When a token price is not configured, the UI shows that the rate is unavailable instead of making up a cost.
 
 ## 19. Roadmap
+
+The full roadmap is in [ROADMAP.md](ROADMAP.md). It explains what I would build, why each feature is in that position, what needs to exist first, and how I would measure success.
+
+The stack-ranked order is:
 
 ### Next
 
