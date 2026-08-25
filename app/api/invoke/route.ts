@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     return jsonError(`Prompts are limited to ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`, 400, "PROMPT_TOO_LONG");
   }
   const model = await resolveAvailableModel(modelId);
-  if (!model) return jsonError("That model is not in the compatible DigitalOcean model list.", 400, "MODEL_NOT_ALLOWED");
+  if (!model) return jsonError("That model is not in the verified DigitalOcean model catalog.", 400, "MODEL_NOT_ALLOWED");
 
   if (isDemoMode()) {
     const delay = 650 + (modelId.length % 5) * 230;
