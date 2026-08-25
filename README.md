@@ -139,9 +139,14 @@ Accepts the original prompt and two or three successful model results. It return
 npm run typecheck
 npm run lint
 npm test
+npm run eval:gateway
 ```
 
 The test suite verifies server rendering, the dated verified model directory, input validation, directory-constrained and explainable Auto-pick recommendations, the independent-result contract, objective metrics, and that synthesis provenance only references submitted responses.
+
+The gateway evaluation suite adds 30 versioned technical, writing, analysis, explanation, general, and adversarial routing cases. It measures contract validity, verified-ID compliance, task and complexity accuracy, expected-capability Hit@3, provider diversity, and p50/p95 routing latency. The checked-in fixture scorecard is at [`evals/results/gateway-scorecard-fixture.md`](evals/results/gateway-scorecard-fixture.md); the complete methodology and opt-in live/blinded outcome commands are in [`docs/gateway-evaluations.md`](docs/gateway-evaluations.md).
+
+Evaluation scores are internal decision evidence, not objective model-quality claims. Live routing and outcome evaluation require an explicit billable-run acknowledgement, and answer quality is reviewed as blinded A/B preference with its sample size and protocol disclosed.
 
 ## Deploy to DigitalOcean App Platform
 
