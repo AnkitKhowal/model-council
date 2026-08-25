@@ -54,7 +54,7 @@ export async function getModelDirectory(): Promise<ModelDirectory> {
     }).filter((model, index, all) => all.findIndex((candidate) => candidate.id === model.id) === index)
       .sort((a, b) => a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name));
 
-    if (models.length < 3) return fallbackDirectory("DigitalOcean returned too few compatible text models, so the built-in catalog is shown.");
+    if (models.length < 3) return fallbackDirectory("DigitalOcean returned too few verified text models, so the built-in catalog is shown.");
     const value: ModelDirectory = {
       models,
       source: "digitalocean",
