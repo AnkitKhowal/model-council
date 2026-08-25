@@ -12,7 +12,7 @@ Customers do not need another generic benchmark telling them which model is univ
 
 Model Council therefore separates four jobs:
 
-1. **Route:** Consider every compatible model currently returned by DigitalOcean and recommend three complementary choices using task type, complexity, cost, and latency—not complexity alone.
+1. **Route:** Consider every model in the deployment's dated, compatibility-tested catalog and recommend three complementary choices using task type, complexity, cost, and latency—not complexity alone.
 2. **Compare:** Show the original responses without hiding inconvenient differences.
 3. **Understand:** Display objective latency, token, and estimated-cost measurements.
 4. **Combine:** Synthesize useful common ground while linking every section back to the contributing models.
@@ -23,7 +23,7 @@ For live combined answers, the app prefers DigitalOcean's opt-in **Model Synthes
 
 ## Experience
 
-- Submit up to 4,000 characters and search or filter the full compatible DigitalOcean model directory before selecting two or three models.
+- Submit up to 4,000 characters and search or filter the verified DigitalOcean model directory before selecting two or three models.
 - Use **Auto-pick Beta** to consider the same live directory, preview three recommended models and a concrete reason for each selection, then edit the council before running it.
 - Receive independent results progressively; one failure never removes successful responses.
 - Compare latency, token usage, and estimated cost using a versioned pricing table.
@@ -77,7 +77,7 @@ The default configuration uses realistic fixtures and does not make billable mod
 DEMO_MODE=true
 ```
 
-Fixture mode remains fully interactive and includes a broad representative text-model catalog. It deliberately simulates different model latency, answers, token usage, partial results, and synthesis.
+Fixture mode remains fully interactive and mirrors the latest verified text-model catalog. It deliberately simulates different model latency, answers, token usage, partial results, and synthesis.
 
 ### Live DigitalOcean inference
 
@@ -94,13 +94,25 @@ USE_NATIVE_MODEL_SYNTHESIS=false
 
 Never prefix the inference key with `NEXT_PUBLIC_`, commit it, paste it into issue reports, or expose it in client-side code.
 
-In live mode, the server loads currently available IDs from DigitalOcean's authenticated `/v1/models` endpoint, filters out image, audio, video, embedding, and reranking models, and exposes only safe display metadata to the browser. The built-in catalog provides a credential-free fallback. Model availability and pricing change over time; review the compatibility filter in `lib/models.ts` against the [DigitalOcean model catalog](https://docs.digitalocean.com/products/inference/details/models/).
+In live mode, the server loads currently available IDs from DigitalOcean's authenticated `/v1/models` endpoint, filters out image, audio, video, embedding, reranking, and router IDs, and intersects the result with a dated compatibility-tested allowlist. The browser therefore sees only models that both still exist and produced a non-empty response through this deployment on the latest probe. The same allowlist is the credential-free fallback. Model availability and pricing change over time; review `VERIFIED_MODEL_IDS` in `lib/models.ts` against the [DigitalOcean model catalog](https://docs.digitalocean.com/products/inference/details/models/).
+
+### Re-check model compatibility
+
+The latest full probe ran on **August 25, 2026** against 55 text-model candidates. Twenty produced valid responses through the deployed application. The report is in [`docs/model-compatibility-2026-08-25.md`](docs/model-compatibility-2026-08-25.md).
+
+To smoke-test every model currently exposed by a running Model Council deployment:
+
+```bash
+MODEL_COUNCIL_URL=https://your-app.example npm run probe:models
+```
+
+This makes real, potentially billable inference calls. It uses four concurrent workers, a minimal response prompt, and a 40-second client timeout. A successful provider discovery response is not treated as proof that the account tier can invoke a model.
 
 ## API contracts
 
 ### `GET /api/models`
 
-Returns the complete compatible text-model directory for the current DigitalOcean access key, plus whether it came from live discovery, fixtures, or fallback configuration. The inference key never reaches the browser. Results are cached briefly to avoid adding a catalog lookup to every interaction.
+Returns the verified text-model directory for the current DigitalOcean access key, its compatibility-probe timestamp, and whether it came from live discovery, fixtures, or fallback configuration. The inference key never reaches the browser. Results are cached briefly to avoid adding a catalog lookup to every interaction.
 
 ### `POST /api/recommend`
 
@@ -129,7 +141,7 @@ npm run lint
 npm test
 ```
 
-The test suite verifies server rendering, the broad compatible model directory, input validation, directory-constrained and explainable Auto-pick recommendations, the independent-result contract, objective metrics, and that synthesis provenance only references submitted responses.
+The test suite verifies server rendering, the dated verified model directory, input validation, directory-constrained and explainable Auto-pick recommendations, the independent-result contract, objective metrics, and that synthesis provenance only references submitted responses.
 
 ## Deploy to DigitalOcean App Platform
 
@@ -151,6 +163,7 @@ App Platform sets `PORT`; the production server listens on that value automatica
 - **Explainable routing:** Auto-pick is a recommendation, not an invisible quality score. The user sees and can change every model before inference begins.
 - **No authentication or public rate limiting:** Appropriate for a controlled take-home demo, not an unrestricted production deployment.
 - **Chat Completions compatibility:** Maximizes consistency across the selected open models; model-specific advanced features are intentionally deferred.
+- **Dated health snapshot:** A passed probe proves that a model worked for this account and request shape at that time, not permanent uptime. Production would refresh the allowlist with a scheduled, authenticated health job and retain the last-known-good set on transient provider failures.
 
 ## Roadmap
 
