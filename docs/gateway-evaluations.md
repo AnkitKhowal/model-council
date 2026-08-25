@@ -9,6 +9,8 @@ Model Council evaluates the gateway separately from the models it selects. This 
 3. **Operations:** Measure routing p50/p95 latency, inference success count, council wall-clock latency, tokens, estimated cost when rates are available, and fallback usage.
 4. **Outcome quality:** Compare Auto-pick with the fixed default council using blinded human A/B review. This evidence stays advisory and is never shown as an objective user-facing score.
 
+The optional AI selector has a 2.5-second production latency budget. If it exceeds that budget or violates the routing constraints, the gateway returns the transparent deterministic council so Auto-pick remains usable within the three-second p95 guardrail.
+
 ## Dataset
 
 [`evals/gateway-cases.json`](../evals/gateway-cases.json) contains 30 versioned cases across technical work, writing, analysis, explanation, general requests, and adversarial prompt injection. Each case specifies an expected task group, complexity, and capability coverage rather than a single correct set of models.
