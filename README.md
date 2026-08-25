@@ -116,7 +116,7 @@ Returns the verified text-model directory for the current DigitalOcean access ke
 
 ### `POST /api/recommend`
 
-Accepts a prompt and returns exactly three model IDs from the currently discovered compatible directory, with roles, selection reasons, task type, complexity, and routing priority. In live mode, a lightweight DigitalOcean-hosted model considers the complete directory. Invalid output, timeouts, a missing key, or selector failure degrade to the same response contract using transparent local rules, so Auto-pick never blocks manual comparison.
+Accepts a prompt and returns exactly three model IDs from the currently verified directory, with roles, selection reasons, task type, complexity, and routing priority. In live mode, a lightweight DigitalOcean-hosted model considers the complete verified directory. Invalid output, timeouts, a missing key, or selector failure degrade to the same response contract using transparent local rules, so Auto-pick never blocks manual comparison.
 
 ### `POST /api/invoke`
 
