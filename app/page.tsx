@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_MODEL_IDS, MODEL_CATALOG, PRICING_AS_OF, getModel, type ModelConfig } from "../lib/models";
+import { DEFAULT_MODEL_IDS, MODEL_CATALOG, PRICING_AS_OF, VERIFIED_MODELS_AS_OF, getModel, type ModelConfig } from "../lib/models";
 import type { ApiError, AutoPickRecommendation, ModelDirectory, ModelResult, RunMode, Synthesis } from "../lib/types";
 
 const examples = [
@@ -41,6 +41,10 @@ function formatCost(cost: number | null) {
   if (cost < 0.00001) return "<$0.00001";
   if (cost < 0.001) return `$${cost.toFixed(5)}`;
   return `$${cost.toFixed(3)}`;
+}
+
+function formatVerificationDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(value));
 }
 
 function getErrorMessage(payload: unknown, fallback: string) {
@@ -105,6 +109,7 @@ export default function Home() {
   const [providerFilter, setProviderFilter] = useState("All providers");
   const [directorySource, setDirectorySource] = useState<ModelDirectory["source"]>("fixture");
   const [directoryNotice, setDirectoryNotice] = useState<string | null>(null);
+  const [verifiedAt, setVerifiedAt] = useState(VERIFIED_MODELS_AS_OF);
   const resultsRef = useRef<HTMLElement>(null);
   const modelBrowserRef = useRef<HTMLDivElement>(null);
 
@@ -119,6 +124,7 @@ export default function Home() {
         setModels(directory.models);
         setDirectorySource(directory.source);
         setDirectoryNotice(directory.notice ?? null);
+        setVerifiedAt(directory.verifiedAt ?? VERIFIED_MODELS_AS_OF);
         setSelectedIds((current) => {
           const availableIds = new Set(directory.models.map((model) => model.id));
           const next = current.filter((modelId) => availableIds.has(modelId));
@@ -130,7 +136,7 @@ export default function Home() {
         });
       })
       .catch(() => {
-        if (active) setDirectoryNotice("Live discovery is unavailable; the built-in compatible catalog is shown.");
+        if (active) setDirectoryNotice("Live discovery is unavailable; the latest verified catalog is shown.");
       })
       .finally(() => {
         if (active) setModelsLoading(false);
@@ -409,8 +415,11 @@ export default function Home() {
           </div>
 
           <div className="catalog-meta">
-            <span>{modelsLoading ? "Loading DigitalOcean catalog…" : `${visibleModels.length} of ${models.length} compatible models`}</span>
-            <span>{directorySource === "digitalocean" ? "Live catalog" : directorySource === "fixture" ? "Demo catalog" : "Fallback catalog"}</span>
+            <span>{modelsLoading ? "Loading DigitalOcean catalog…" : `${visibleModels.length} of ${models.length} verified models`}</span>
+            <span title={`Last compatibility probe: ${verifiedAt}`}>
+              {directorySource === "digitalocean" ? "Live · " : directorySource === "fixture" ? "Demo · " : "Fallback · "}
+              verified {formatVerificationDate(verifiedAt)}
+            </span>
           </div>
 
           <div className="model-grid model-browser-grid" ref={modelBrowserRef}>
@@ -435,7 +444,7 @@ export default function Home() {
                 </button>
               );
             })}
-            {!visibleModels.length && <p className="model-empty">No compatible models match this search.</p>}
+            {!visibleModels.length && <p className="model-empty">No verified models match this search.</p>}
           </div>
 
           {directoryNotice && <p className="catalog-notice">{directoryNotice}</p>}
