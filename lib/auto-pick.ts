@@ -4,7 +4,7 @@ import type { AutoPickComplexity, AutoPickRecommendation, AutoPickRole, RunMode 
 const MODEL_IDS = {
   deepReasoning: "openai-gpt-oss-120b",
   generalist: "llama-4-maverick",
-  technical: "qwen3.5-397b-a17b",
+  technical: "qwen3.8-max",
   efficient: "openai-gpt-oss-20b",
 } as const;
 

@@ -11,22 +11,20 @@ export type ModelConfig = {
 
 export const PRICING_AS_OF = "August 2026";
 
-const DEMO_MODEL_IDS = [
-  "openai-gpt-oss-120b", "llama-4-maverick", "qwen3.5-397b-a17b", "openai-gpt-oss-20b",
-  "openai-gpt-5.6-sol", "openai-gpt-5.6-terra", "openai-gpt-5.6-luna", "openai-gpt-5.5",
-  "openai-gpt-5.4", "openai-gpt-5.4-mini", "openai-gpt-5.4-nano", "openai-gpt-5.4-pro",
-  "openai-gpt-5.3-codex", "openai-gpt-5.2", "openai-gpt-5.2-pro", "openai-gpt-5",
-  "openai-gpt-5-mini", "openai-gpt-5-nano", "openai-gpt-4.1", "openai-gpt-4o",
-  "openai-gpt-4o-mini", "openai-o1", "openai-o3", "openai-o3-mini",
-  "anthropic-claude-fable-5", "anthropic-claude-haiku-4.5", "anthropic-claude-opus-5",
-  "anthropic-claude-opus-4.8", "anthropic-claude-opus-4.7", "anthropic-claude-opus-4.6",
-  "anthropic-claude-opus-4.5", "anthropic-claude-5-sonnet", "anthropic-claude-4.6-sonnet",
-  "anthropic-claude-4.5-sonnet", "arcee-trinity-large-thinking", "qwen3.8-max",
-  "deepseek-v4-pro-0813", "deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-4-flash",
-  "deepseek-3.2", "gemma-4-31B-it", "minimax-m2.5", "kimi-k3", "kimi-k2.6", "kimi-k2.5",
-  "mistral-3-14B", "nemotron-3-ultra-550b", "nvidia-nemotron-3-super-120b",
-  "nemotron-3-nano-omni", "nemotron-nano-12b-v2-vl", "mimo-v2.5-pro", "glm-5.2", "glm-5.1", "glm-5",
+export const VERIFIED_MODELS_AS_OF = "2026-08-25T06:11:24.820Z";
+
+// Every entry returned a non-empty response through the deployed app during the
+// dated compatibility probe. Provider discovery alone is not sufficient because
+// it can include models that the current account tier cannot invoke.
+export const VERIFIED_MODEL_IDS = [
+  "qwen3.8-max",
+  "deepseek-3.2", "deepseek-4-flash", "deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813",
+  "gemma-4-31B-it", "llama-4-maverick", "minimax-m2.5", "mistral-3-14B", "kimi-k3",
+  "nemotron-3-nano-omni", "nvidia-nemotron-3-super-120b", "nemotron-3-ultra-550b", "nemotron-nano-12b-v2-vl",
+  "openai-gpt-oss-120b", "openai-gpt-oss-20b", "mimo-v2.5-pro", "glm-5.1", "glm-5.2",
 ] as const;
+
+const VERIFIED_MODEL_ID_SET = new Set<string>(VERIFIED_MODEL_IDS);
 
 const NAME_OVERRIDES: Record<string, string> = {
   "openai-gpt-oss-120b": "GPT OSS 120B",
@@ -45,7 +43,7 @@ const PRICING: Record<string, [number, number]> = {
   "openai-gpt-oss-20b": [0.05, 0.45],
 };
 
-const NON_TEXT_MODEL_PATTERN = /(^fal-ai\/|embed|embedding|rerank|bge-|e5-|gpt-image|stable-diffusion|flux|sdxl|tts|text-to-audio|speech|whisper|elevenlabs|wan\d|t2v|image-generation)/i;
+const NON_TEXT_MODEL_PATTERN = /(^fal-ai\/|^router:|all-mini-lm|gte-|mpnet|embed|embedding|rerank|bge-|e5-|gpt-image|stable-diffusion|flux|sdxl|tts|text-to-audio|speech|whisper|elevenlabs|wan\d|t2v|image-generation)/i;
 
 function providerFor(modelId: string, ownedBy?: string) {
   if (/^openai-|^openai\//i.test(modelId)) return "OpenAI";
@@ -101,6 +99,10 @@ export function isTextModelId(modelId: string) {
   return Boolean(modelId) && modelId.length <= 160 && !NON_TEXT_MODEL_PATTERN.test(modelId);
 }
 
+export function isVerifiedModelId(modelId: string) {
+  return VERIFIED_MODEL_ID_SET.has(modelId);
+}
+
 export function createModelConfig(modelId: string, ownedBy?: string): ModelConfig {
   const providerName = providerFor(modelId, ownedBy);
   const name = displayNameFor(modelId);
@@ -117,9 +119,9 @@ export function createModelConfig(modelId: string, ownedBy?: string): ModelConfi
   };
 }
 
-export const MODEL_CATALOG: ModelConfig[] = DEMO_MODEL_IDS.map((modelId) => createModelConfig(modelId));
+export const MODEL_CATALOG: ModelConfig[] = VERIFIED_MODEL_IDS.map((modelId) => createModelConfig(modelId));
 
-export const DEFAULT_MODEL_IDS = ["openai-gpt-oss-120b", "llama-4-maverick", "qwen3.5-397b-a17b"];
+export const DEFAULT_MODEL_IDS = ["openai-gpt-oss-120b", "llama-4-maverick", "deepseek-3.2"];
 
 export function getModel(modelId: string, catalog: ModelConfig[] = MODEL_CATALOG) {
   return catalog.find((model) => model.id === modelId);

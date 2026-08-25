@@ -74,4 +74,5 @@ export type ModelDirectory = {
   models: import("./models").ModelConfig[];
   source: "digitalocean" | "fixture" | "fallback";
   notice?: string;
+  verifiedAt?: string;
 };
